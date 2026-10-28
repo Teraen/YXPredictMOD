@@ -307,3 +307,84 @@ test('selected game discovery hides create when room exists and create reuses it
  x.advance(15001);assert.equal(x.rooms.findByGame(x.b,'selected-native').available,false);
  x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(x.rooms.findByGame(x.b,'selected-native').exists,false);
 });
+test('leaving forfeits unresolved bets without refund, unblocks relief once and survives restart',()=>{
+  for(const rules of [1,2]){
+    const x=setup(undefined,rules);x.trade(x.a,0,1,1000);
+    let view=x.rooms.abandon(x.code,x.a,x.snapshot.id,'depart-game-0001');
+    assert.equal(view.forfeited,true);assert.equal(view.abandonConfirmed,true);assert.equal(view.open,false);
+    assert.equal(view.balance,50);assert.equal(view.reliefCount,1);assert.equal(view.positions[0].stake,1000);
+    view=x.rooms.abandon(x.code,x.a,x.snapshot.id,'depart-game-0001');assert.equal(view.balance,50);assert.equal(view.reliefCount,1);
+    assert.throws(()=>x.trade(x.a,0,1,10),/放弃/);
+    x.rooms.join(x.code,x.a,x.snapshot.id);assert.throws(()=>x.trade(x.a,0,1,10),/放弃/);
+    const restored=new Rooms(structuredClone(x.rooms.state));
+    x.snapshot.ended=true;x.snapshot.round=15;x.snapshot.ranks=[1,2,3,4,5,6,7,8];
+    view=restored.sync(x.code,x.a,x.snapshot);assert.equal(view.balance,50);assert.equal(view.payout,0);assert.equal(view.reliefCount,1);
+  }
+});
+test('forfeiting one room cannot grant relief while another owned wager is pending',()=>{
+  const x=setup(undefined,2);x.trade(x.a,0,1,500);
+  const second=x.rooms.create(x.a,{...x.snapshot,id:'second-pending'});
+  x.rooms.trade(second.code,x.a,{kind:'buy',player:0,rank:1,stake:500,operation:'second-room-bet',version:second.version});
+  assert.equal(x.rooms.abandon(x.code,x.a,x.snapshot.id,'depart-one-room').balance,0);
+  assert.equal(x.rooms.abandon(second.code,x.a,'second-pending','depart-last-room').balance,50);
+});
+test('departure keeps previously paid results and does not forfeit another member',()=>{
+  const x=setup(undefined,2);x.trade(x.a,7,8,100);x.trade(x.a,0,1,900);x.trade(x.b,0,1,10);
+  x.snapshot.round=2;x.snapshot.ranks[7]=8;x.rooms.sync(x.code,x.a,x.snapshot);
+  const paid=x.rooms.view(x.code,x.a);assert.equal(paid.payout,400);assert.equal(paid.balance,400);
+  x.rooms.abandon(x.code,x.a,x.snapshot.id,'departure-partial');
+  x.snapshot.round=16;x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];x.rooms.sync(x.code,x.a,x.snapshot);
+  assert.equal(x.rooms.view(x.code,x.a).balance,400);assert.equal(x.rooms.view(x.code,x.a).payout,400);
+  assert.equal(x.rooms.view(x.code,x.b).balance,1030);assert.equal(x.rooms.view(x.code,x.b).forfeited,false);
+});
+test('forfeiture and relief roll back together on storage failure',()=>{
+  let fail=false;const x=setup(()=>{if(fail)throw Error('disk full');},2);x.trade(x.a,0,1,1000);
+  const before=structuredClone(x.rooms.state);fail=true;
+  assert.throws(()=>x.rooms.abandon(x.code,x.a,x.snapshot.id,'departure-failure'),/disk full/);
+  assert.deepEqual(x.rooms.state,before);fail=false;
+  assert.equal(x.rooms.abandon(x.code,x.a,x.snapshot.id,'departure-failure').balance,50);
+});
+test('round ten result or round eleven permanently closes all trades while keeping settlement alive',()=>{
+  for(const nextRound of [false,true]){
+    const x=setup(undefined,2);x.snapshot.round=10;x.rooms.sync(x.code,x.a,x.snapshot);x.trade(x.a,0,1,100);
+    if(nextRound)x.snapshot.round=11;else x.snapshot.closedThrough=10;
+    let view=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(view.tradingClosed,true);assert.equal(view.open,false);
+    for(const kind of ['buy','half','sell','switch'])assert.throws(()=>x.trade(x.a,0,2,10,kind),/封盘/);
+    const restored=new Rooms(structuredClone(x.rooms.state));
+    const stale={...x.snapshot,closedThrough:0};restored.sync(x.code,x.a,stale);assert.equal(restored.view(x.code,x.a).open,false);
+    x.snapshot.round=20;x.snapshot.ended=true;x.snapshot.ranks=[1,2,3,4,5,6,7,8];view=restored.sync(x.code,x.a,x.snapshot);
+    assert.equal(view.balance,1300);assert.equal(view.settled,true);assert.equal(restored.sync(x.code,x.a,x.snapshot).balance,1300);
+  }
+});
+test('old room saves without cutoff flag cannot trade beyond round ten',()=>{
+  const x=setup(undefined,2);const r=x.rooms.state.rooms[x.code];r.round=11;r.open=true;delete r.tradingClosed;
+  assert.equal(x.rooms.view(x.code,x.a).open,false);assert.throws(()=>x.trade(x.a,0,1,10),/封盘/);
+});
+test('same-round elimination rejects gaps atomically, then settles exact adjacent and losing claims by UID once',()=>{
+  const x=setup(undefined,2);x.trade(x.a,7,8,100);x.trade(x.a,6,6,100);x.trade(x.a,5,1,100);
+  const before=structuredClone(x.rooms.state);x.snapshot.round=2;x.snapshot.ranks[6]=7;
+  assert.throws(()=>x.rooms.sync(x.code,x.a,x.snapshot),/对齐/);assert.deepEqual(x.rooms.state,before);
+  x.snapshot.ranks[7]=8;x.snapshot.ranks[5]=6;x.snapshot.players.reverse();x.snapshot.ranks.reverse();
+  let v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.balance,1200);assert.equal(v.payout,500);
+  v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.balance,1200);
+  x.snapshot.ended=true;x.snapshot.round=16;x.snapshot.ranks=[8,7,6,5,4,3,2,1];v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.balance,1200);
+});
+test('abandon HTTP route authenticates the member and game, confirms only its account',async()=>{
+  const x=setup(undefined,2);x.trade(x.a,0,1,1000);
+  const server=http.createServer(createHandler(x.rooms));await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const url=`http://127.0.0.1:${server.address().port}/v1/room`;
+  try{
+    const req=(token,gameId=x.snapshot.id)=>fetch(url,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({action:'abandon',code:x.code,gameId,operation:'http-departure'})});
+    assert.equal((await req('invalid')).status,401);assert.equal((await req(x.a,'other-game')).status,400);
+    const reply=await req(x.a);assert.equal(reply.status,200);const data=(await reply.json()).data;
+    assert.equal(data.abandonConfirmed,true);assert.equal(data.balance,50);assert.equal(data.forfeited,true);
+    assert.equal(x.rooms.view(x.code,x.b).forfeited,false);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test('incomplete ended snapshots also wait for aligned simultaneous elimination ranks',()=>{
+  const x=setup(undefined,2);x.trade(x.a,6,7,100);const before=structuredClone(x.rooms.state);
+  const partial={...x.snapshot,ended:true,ranks:[0,0,0,0,0,0,7,0]};
+  assert.throws(()=>x.rooms.sync(x.code,x.a,partial),/对齐/);assert.deepEqual(x.rooms.state,before);
+  partial.ranks[7]=8;const result=x.rooms.sync(x.code,x.a,partial);assert.equal(result.balance,1300);assert.equal(result.settled,false);
+});

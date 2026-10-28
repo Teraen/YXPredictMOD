@@ -32,6 +32,7 @@ namespace YxPrediction
             public string[] Targets;
             public UnityWebRequest Request;
             public EloShardScan Scan;
+            public bool Fallback;
         }
         public EloClient(ModContext ctx) { _ctx = ctx; }
         bool TryCached(string uid, out Cached cached)
@@ -104,7 +105,7 @@ namespace YxPrediction
                 _jobs[slot] = job;
                 try
                 {
-                    job.Request = UnityWebRequest.Get(EloData.Url(uid)); job.Request.timeout = 8;
+                    job.Request = UnityWebRequest.Get(EloData.Url(uid, false)); job.Request.timeout = 8;
                     job.Request.SendWebRequest();
                 }
                 catch (Exception ex) { Fail(slot, ex.Message); }
@@ -118,6 +119,18 @@ namespace YxPrediction
         void Fail(int slot, string reason)
         {
             Job job = _jobs[slot];
+            if (!job.Fallback)
+            {
+                if (job.Request != null) { job.Request.Abort(); job.Request.Dispose(); }
+                job.Request = null; job.Scan = null; job.Fallback = true;
+                _ctx.Log.Info("Elo主地址未完成查询，回退原站：" + reason);
+                try
+                {
+                    job.Request = UnityWebRequest.Get(EloData.Url(job.Targets[0], true)); job.Request.timeout = 8;
+                    job.Request.SendWebRequest(); return;
+                }
+                catch (Exception ex) { reason = ex.Message; }
+            }
             for (int i = 0; i < job.Targets.Length; i++) Remember(job.Targets[i], new HorseProfile(Rating.Unknown()), true);
             _ctx.Log.Warn("Elo分片查询失败，30秒后可重试：" + reason);
             Release(slot); Revision++;
@@ -125,12 +138,24 @@ namespace YxPrediction
         void Finish(int slot)
         {
             Job job = _jobs[slot];
+            var retry = new List<string>();
             for (int i = 0; i < job.Targets.Length; i++)
             {
                 string uid = job.Targets[i];
-                try { Remember(uid, HorseProfile.Read(job.Scan.Rows, uid), false); }
-                catch (Exception ex) { Remember(uid, new HorseProfile(Rating.Unknown()), true); _ctx.Log.Warn("Elo玩家资料无效：" + ex.Message); }
+                try
+                {
+                    HorseProfile profile = HorseProfile.Read(job.Scan.Rows, uid);
+                    if (!job.Fallback && !profile.Rating.Found) retry.Add(uid);
+                    else Remember(uid, profile, false);
+                }
+                catch (Exception ex)
+                {
+                    if (!job.Fallback) retry.Add(uid);
+                    else Remember(uid, new HorseProfile(Rating.Unknown()), true);
+                    _ctx.Log.Warn("Elo玩家资料无效：" + ex.Message);
+                }
             }
+            if (retry.Count > 0) { job.Targets = retry.ToArray(); Fail(slot, "主站缺少玩家或资料无效"); Revision++; return; }
             Release(slot); Revision++;
         }
         public void Update()

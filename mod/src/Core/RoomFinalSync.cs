@@ -43,6 +43,24 @@ namespace YxPrediction
             }
             _entries.Add(next); return true;
         }
+        public bool HasComplete(string server, string token, string code, string gameId)
+        {
+            for (int i = 0; i < _entries.Count; i++)
+            {
+                Entry entry = _entries[i];
+                if (entry.Server != server || entry.Token != token || entry.Code != code || entry.GameId != gameId) continue;
+                var ranks = Json.GetArray(entry.Snapshot, "ranks"); if (ranks == null || ranks.Count != 8) continue;
+                var seen = new bool[9]; bool complete = true;
+                for (int n = 0; n < 8; n++)
+                {
+                    int rank = Convert.ToInt32(ranks[n], CultureInfo.InvariantCulture);
+                    if (rank < 1 || rank > 8 || seen[rank]) { complete = false; break; }
+                    seen[rank] = true;
+                }
+                if (complete) return true;
+            }
+            return false;
+        }
         public bool Confirm(Entry entry, string code, string gameId, bool settled)
         {
             if (!settled || entry.Code != code || entry.GameId != gameId) return false;

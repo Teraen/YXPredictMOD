@@ -13,7 +13,7 @@ namespace YxPrediction
         public bool ReliefRequiresNoPendingBets;
         public string Code, GameId;
         public string[] MemberIds = new string[0], MemberNames = new string[0], MemberUids = new string[0];
-        public bool Host, Open, Settled;
+        public bool Host, Open, Settled, Forfeited, TradingClosed;
         public int Version, Round, Members, Rules;
         public int[] BaseRates=new int[64], QuoteRates=new int[64], Factors=new int[64];
         public long[] Claims=new long[8], FinalPayouts=new long[8];
@@ -21,6 +21,15 @@ namespace YxPrediction
         public readonly string[] Uids = new string[8], Names = new string[8];
         public readonly int[] Ranks = new int[8], MyRanks = new int[8];
         public readonly long[] Stakes = new long[8], Pools = new long[64];
+        public bool HasPendingBets
+        {
+            get
+            {
+                if (Settled || Forfeited) return false;
+                for (int i = 0; i < 8; i++) if ((Rules != 2 || Ranks[i] == 0) && (Claims[i] > 0 || Stakes[i] > 0)) return true;
+                return false;
+            }
+        }
         public static RoomState Read(Dictionary<string, object> d)
         {
             var r = new RoomState();
@@ -31,6 +40,9 @@ namespace YxPrediction
             r.ReliefCount = (long)Json.GetNumber(d, "reliefCount", 0);
             r.ReliefRequiresNoPendingBets = Json.GetBool(d, "reliefRequiresNoPendingBets", false);
             r.Version = (int)Json.GetNumber(d, "version", 0); r.Round = (int)Json.GetNumber(d, "round", 0); r.Members = (int)Json.GetNumber(d, "members", 0);
+            r.Forfeited = Json.GetBool(d, "forfeited", false);
+            r.TradingClosed = Json.GetBool(d, "tradingClosed", false) || r.Round > PredictionBook.TradingClosingRound;
+            r.Open = r.Open && !r.Forfeited && !r.TradingClosed;
             r.Balance = (long)Json.GetNumber(d, "balance", 0); r.Payout = (long)Json.GetNumber(d, "payout", 0);
             r.Rules=(int)Json.GetNumber(d,"rules",1);
             if(r.Rules==2){

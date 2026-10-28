@@ -24,6 +24,7 @@ namespace YxPrediction
                 row["round"] = m.HighestRound;
                 row["locked"] = m.Locked;
                 row["settled"] = m.Settled;
+                row["abandoned"] = m.Abandoned;
                 row["payout"] = m.TotalPayout;
                 var players = new List<object>();
                 var rates = new List<object>();
@@ -208,6 +209,8 @@ namespace YxPrediction
                 market.HighestRound = (int)Number(row, "round", 1, 100000);
                 market.Locked = Json.GetBool(row, "locked", false);
                 market.Settled = Json.GetBool(row, "settled", false);
+                market.Abandoned = Json.GetBool(row, "abandoned", false);
+                if (market.Abandoned && (!market.Locked || market.Settled)) throw new FormatException("离场放弃状态损坏");
                 market.TotalPayout = Number(row, "payout", 0, Odds.MaximumBalance);
                 if (formatVersion >= 4)
                 {

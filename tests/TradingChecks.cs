@@ -112,9 +112,9 @@ internal static partial class Program
         Check("unreachable prediction retains adjacent value then can expire to zero", delegate
         {
             MatchSnapshot s = Snapshot(5); PredictionBook b = TradeBook(s); Buy(b, s, 0, 8, 100);
-            s.Round = 10; s.States[7] = new PlayerState(0, 0, 9, 8); b.Observe(s, null);
+            s.Round = 8; s.States[7] = new PlayerState(0, 0, 9, 8); b.Observe(s, null);
             True(!TradingOdds.CanBuy(b.Find(s.Id), 0, 8)); True(TradingOdds.Sale(b.Find(s.Id), 0, false) > 0);
-            s.Round = 11; s.States[6] = new PlayerState(0, 0, 10, 7); b.Observe(s, null);
+            s.Round = 9; s.States[6] = new PlayerState(0, 0, 10, 7); b.Observe(s, null);
             Equal(TradingOdds.Sale(b.Find(s.Id), 0, false), 0L); Equal(Sell(b, s, 0, false), null); Equal(b.Balance, 900L);
         });
         Check("contradictory eliminated ranks cannot credit or reopen trading", delegate

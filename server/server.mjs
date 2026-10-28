@@ -35,6 +35,7 @@ export function createHandler(rooms) {
         case 'view': result = rooms.view(body.code, key); break;
         case 'sync': result = rooms.sync(body.code, key, body.snapshot); break;
         case 'trade': result = rooms.trade(body.code, key, body); break;
+        case 'abandon': result = rooms.abandon(body.code, key, body.gameId, body.operation); break;
         default: throw new RoomError('操作无效');
       }
       res.end(JSON.stringify({ok: true, data: result}));

@@ -92,8 +92,8 @@ internal static partial class Program
         Check("clearing the final zero-value position unlocks relief without erasing history", delegate
         {
             var s = Snapshot(5); var book = TradeBook(s); Equal(Buy(book, s, 0, 8, 1000), null);
-            s.Round = 10; s.States[7] = new PlayerState(0, 0, 9, 8); book.Observe(s, null);
-            s.Round = 11; s.States[6] = new PlayerState(0, 0, 10, 7); book.Observe(s, null);
+            s.Round = 8; s.States[7] = new PlayerState(0, 0, 9, 8); book.Observe(s, null);
+            s.Round = 9; s.States[6] = new PlayerState(0, 0, 10, 7); book.Observe(s, null);
             Equal(TradingOdds.Sale(book.Find(s.Id), 0, false), 0L); True(!book.GrantBankruptcyRelief());
             Equal(Sell(book, s, 0, false), null); True(book.GrantBankruptcyRelief()); Equal(book.Balance, 50L);
             Equal(book.Find(s.Id).Positions[0].Invested, 1000L); Equal(book.Find(s.Id).Positions[0].NetResult, -1000L);

@@ -20,6 +20,12 @@ namespace YxPrediction
         Dictionary<string, object> _sent, _pending;
         string _endpoint, _token, _code, _afterRegister;
         readonly RoomFinalSync _finals;
+        RoomDepartureSync _departures;
+        RoomDepartureSync.Entry _departureRequest;
+        int _departureCursor;
+        float _departureNext;
+        bool _locationKnown;
+        string _activeGameId;
         RoomFinalSync.Entry _finalRequest;
         int _finalCursor;
         float _next, _finalNext;
@@ -66,6 +72,7 @@ namespace YxPrediction
             _name = ctx.Config.Bind("online", "name", "观众", "房间昵称（首次注册时使用，1至24字）");
             ReadIdentity();
             _finals = RoomFinalSync.Read(ctx.Data.Get<Dictionary<string, object>>(RoomFinalSync.SaveKey, null));
+            _departures = RoomDepartureSync.Read(ctx.Data.Get<Dictionary<string, object>>(RoomDepartureSync.SaveKey, null));
             Message = "选择加入、创建或匹配房间";
         }
         public void SetMessage(string message) { Message = message; }
@@ -89,6 +96,48 @@ namespace YxPrediction
             _ctx.Data.Set("room.identity.v1", saved);
         }
         void SaveFinals() { _ctx.Data.Set(RoomFinalSync.SaveKey, _finals.Write()); }
+        void SaveDepartures() { _ctx.Data.Set(RoomDepartureSync.SaveKey, _departures.Write()); }
+        void CaptureDeparture(RoomState state)
+        {
+            if (state == null || state.Settled || state.Forfeited) return;
+            Market market = _mod.Book == null ? null : _mod.Book.Find(state.GameId);
+            if ((market != null && market.Settled) || _finals.HasComplete(_endpoint, _token, state.Code, state.GameId)) return;
+            bool inFlight = _pending != null && Json.GetString(_pending,"code","") == state.Code;
+            if (!state.HasPendingBets && !inFlight) return;
+            var backup = _departures.Write();
+            try { if (_departures.Capture(_endpoint, _token, state.Code, state.GameId)) SaveDepartures(); }
+            catch { _departures = RoomDepartureSync.Read(backup); throw; }
+            state.Open = false;
+        }
+        public void ObserveLocation(string activeId)
+        {
+            _locationKnown = true; _activeGameId = activeId;
+            if (State != null && State.GameId != activeId) CaptureDeparture(State);
+        }
+        void CompleteDepartureRequest()
+        {
+            try
+            {
+                if (_request.isNetworkError || _request.responseCode >= 400) throw new InvalidOperationException();
+                string wire = _request.downloadHandler.text;
+                if (wire == null || wire.Length > 262144) throw new FormatException();
+                var root = Json.ParseObject(wire);
+                if (!Json.GetBool(root,"ok",false)) throw new InvalidOperationException();
+                var data = root["data"] as Dictionary<string, object>;
+                RoomState state = RoomState.Read(data);
+                var backup = _departures.Write();
+                if (!_departures.Confirm(_departureRequest, state.Code, state.GameId, Json.GetBool(data,"abandonConfirmed",false))) throw new FormatException();
+                try { SaveDepartures(); } catch { _departures = RoomDepartureSync.Read(backup); throw; }
+                if (_endpoint == _departureRequest.Server && _token == _departureRequest.Token)
+                {
+                    if (_code == state.Code) State = state;
+                    ObserveRelief(state);
+                }
+                Message = "离场未结算投注已放弃，不退本金、不再返奖";
+            }
+            catch { Message = "离场投注处理尚未确认，将按原房间自动重试；联机需要新版服务端"; }
+            finally { DestroyRequest(); _departureRequest = null; _departureNext = Time.unscaledTime + 5f; }
+        }
         void ObserveRelief(RoomState state)
         {
             if (state.ReliefCount <= _reliefSeen) return;
@@ -218,7 +267,7 @@ namespace YxPrediction
         {
             if (Busy) { Message = "等待上一操作完成，或取消当前匹配"; return; }
             if (!NativeRoomSpectate.IsLobby) { Message = "请先通过游戏返回大厅，再随机加入其他对局"; return; }
-            if (State != null && State.Host && !State.Settled) { Message = "你仍是未结束房间的房主，请先完成对局或明确离开原房间"; return; }
+            if (State != null && State.Host && !State.Settled && !State.Forfeited) { Message = "你仍是未结束房间的房主，请先完成对局或明确离开原房间"; return; }
             _afterRegister = "random";
             if (string.IsNullOrEmpty(_token)) { var register = Body("register"); register["name"] = _name.Value; Send(register); }
             else ConnectReady();
@@ -232,12 +281,13 @@ namespace YxPrediction
         public void Leave()
         {
             if (Busy) { Message = "先等待在途操作确认后再离开"; return; }
-            _code = null; State = null; SaveIdentity(); Message = "已离开；已投入的积分仍留在原房间等待结算，可用原房间号重连";
+            CaptureDeparture(State);
+            _code = null; State = null; SaveIdentity(); Message = "已离开；未结算投注将自动放弃，不退本金、不再返奖";
         }
         public void Trade(string kind, int player, int rank, long stake)
         {
             MatchSnapshot s = _mod.Snapshot;
-            if (Busy || State == null || !State.Open || !PredictionVisibility.CanShow() || s == null || s.Id != State.GameId || !s.TradingOpen || s.Ended || s.Round != State.Round || s.ResultsThroughRound >= s.Round) { Message = "当前不可交易，等待房间与观战状态同步"; return; }
+            if (Busy || State == null || !State.Open || State.Forfeited || State.TradingClosed || s == null || s.Round > PredictionBook.TradingClosingRound || s.ResultsThroughRound >= PredictionBook.TradingClosingRound || _departures.Contains(_endpoint, _token, State.Code, State.GameId) || !PredictionVisibility.CanShow() || s.Id != State.GameId || !s.TradingOpen || s.Ended || s.Round != State.Round || s.ResultsThroughRound >= s.Round) { Message = "当前不可交易，等待房间与观战状态同步"; return; }
             var d = Body("trade"); d["kind"] = kind; d["player"] = player; d["rank"] = rank; d["stake"] = stake;
             d["version"] = State.Version; d["operation"] = Guid.NewGuid().ToString("N");
             _pending = d; SaveIdentity(); Send(d);
@@ -298,6 +348,16 @@ namespace YxPrediction
                 if (Busy) { Message = "服务器地址已变更；先恢复旧地址完成在途操作"; return; }
                 DestroyRequest(); _token = null; _code = null; State = null; ReadIdentity();
             }
+            if (_request == null && _pending == null && _departures.Count > 0 && Time.unscaledTime >= _departureNext)
+            {
+                if (_departureCursor >= _departures.Count) _departureCursor = 0;
+                _departureRequest = _departures.At(_departureCursor++);
+                var body = new Dictionary<string, object> { { "action","abandon" }, { "code",_departureRequest.Code }, { "gameId",_departureRequest.GameId }, { "operation",_departureRequest.Operation } };
+                _departureNext = Time.unscaledTime + 5f;
+                Send(body, _departureRequest.Server, _departureRequest.Token);
+                if (_request == null) _departureRequest = null;
+                return;
+            }
             if (_request == null && _finals.Count > 0 && Time.unscaledTime >= _finalNext)
             {
                 if (_finalCursor >= _finals.Count) _finalCursor = 0;
@@ -330,6 +390,7 @@ namespace YxPrediction
             if (_request != null)
             {
                 if (!_request.isDone) return;
+                if (_departureRequest != null) { CompleteDepartureRequest(); return; }
                 if (_finalRequest != null) { CompleteFinalRequest(); return; }
                 bool connect = false;
                 RoomMatch selected = null;
@@ -361,7 +422,9 @@ namespace YxPrediction
                             State = RoomState.Read(data); _code = State.Code; ObserveMembers(State);
                             if ((_joiningMatch && Json.GetString(_sent, "action", "") == "join") || Json.GetString(_sent, "action", "") == "create") { _joiningMatch = false; _mod.OnlinePanel.Open(); }
                             if (Json.GetString(_sent, "action", "") == "trade") _pending = null;
-                            SaveIdentity(); ObserveRelief(State); Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : State.Rules==2?"基础倍率 × 投注系数；本轮投入影响下一轮，差一名返权益25%":"旧房间沿用原资金池结算规则";
+                            SaveIdentity(); ObserveRelief(State);
+                            if (_locationKnown && State.GameId != _activeGameId) CaptureDeparture(State);
+                            Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : State.Rules==2?"基础倍率 × 投注系数；本轮投入影响下一轮，差一名返权益25%":"旧房间沿用原资金池结算规则";
                         }
                     }
                 }

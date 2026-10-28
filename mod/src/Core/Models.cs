@@ -108,6 +108,7 @@ namespace YxPrediction
         public int HighestRound;
         public bool Locked;
         public bool Settled;
+        public bool Abandoned;
         public int[] FinalRanks;
         public long TotalPayout;
 

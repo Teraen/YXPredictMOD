@@ -95,6 +95,22 @@ namespace YxPrediction
         public void SetQueryStatus(string message) { QueryStatus = message; }
         public void SetFocusedUid(string uid) { if (Snapshot != null) Snapshot.FocusedUid = uid; }
 
+        public void ObserveLocation(string activeId)
+        {
+            bool pending = false;
+            for (int i = 0; i < Book.Markets.Count; i++)
+                if (Book.Markets[i].Id != activeId && PredictionBook.HasPendingBets(Book.Markets[i])) pending = true;
+            if (pending)
+            {
+                var backup = BookCodec.Write(Book);
+                try { if (Book.AbandonExcept(activeId) > 0) Save(); }
+                catch { Book = BookCodec.Read(backup); throw; }
+            }
+#if YX_GAME
+            if (Online != null) Online.ObserveLocation(activeId);
+#endif
+        }
+
         public void AcceptSnapshot(MatchSnapshot snapshot, Rating[] ratings)
         {
             bool switched = Snapshot == null || snapshot == null || Snapshot.Id != snapshot.Id;

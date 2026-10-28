@@ -185,6 +185,7 @@ namespace YxPrediction
             BattleManager manager = BattleManager.Instance;
             if (manager == null || SceneLoader.currentSceneName != "Battle")
             {
+                if (!string.IsNullOrEmpty(SceneLoader.currentSceneName) && SceneLoader.currentSceneName != "Battle") _mod.ObserveLocation(null);
                 _mod.AcceptSnapshot(null, null);
                 Waiting("等待观战场景（当前：" + SceneLoader.currentSceneName + "）");
                 return;
@@ -243,6 +244,7 @@ namespace YxPrediction
                 Waiting(reason);
                 return;
             }
+            _mod.ObserveLocation(snapshot.Id);
             TrackMatch(snapshot.Id);
             BattleManager currentManager = BattleManager.Instance;
             if (currentManager != null)

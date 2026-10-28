@@ -38,6 +38,7 @@ namespace YxPrediction
             SharedTrendsFlow(players, ratings);
             RankSelectionFlow(players, ratings);
             ProtocolRankFlow(players, ratings);
+            DepartureClosingFlow(players, ratings);
             HorseFlow(players, ratings);
             PanelLayoutFlow();
             RoomWireFixture.Verify();
@@ -130,11 +131,28 @@ namespace YxPrediction
             if (roster.Find(players[7].Uid).ConsecutiveWins != 0) throw new Exception("Horse state leaked across matches");
         }
 
+        static void DepartureClosingFlow(Player[] players, Rating[] ratings)
+        {
+            var states = new PlayerState[8];
+            for (int i = 0; i < 8; i++) states[i] = new PlayerState(100, 0, 0, 0);
+            var s = new MatchSnapshot { Id = "departure-close", Round = 10, LiveObserver = true, TradingOpen = true, Players = players, States = states };
+            var b = new PredictionBook(1000); Market m = b.Observe(s, ratings);
+            if (b.Buy(s, players[0].Uid, 1, 1000, m.TradeVersion) != null) throw new Exception("Round ten purchase failed");
+            s.ResultsThroughRound = 10; b.Observe(s, null);
+            if (!m.Locked || m.TradingWindowOpen || b.Sell(s, players[0].Uid, false, m.TradeVersion) == null) throw new Exception("Round ten close failed");
+            if (b.AbandonExcept(null) != 1 || !b.GrantBankruptcyRelief() || b.Balance != 50) throw new Exception("Departure relief failed");
+            b = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b))));
+            if (!b.Find(s.Id).Abandoned || b.GrantBankruptcyRelief()) throw new Exception("Departure was not persistent");
+            var queue = new RoomDepartureSync(); queue.Capture("https://example.test", "token", "123456", s.Id);
+            queue = RoomDepartureSync.Read(Json.ParseObject(Json.Serialize(queue.Write())));
+            if (queue.Count != 1 || !queue.Confirm(queue.At(0), "123456", s.Id, true) || queue.Count != 0) throw new Exception("Departure queue failed");
+        }
+
         static void ProtocolRankFlow(Player[] players, Rating[] ratings)
         {
             var states = new PlayerState[8]; var ranks = new int[8];
             for (int i = 0; i < 8; i++) states[i] = GameRanks.ReadState(100, 0, 0, i);
-            var s = new MatchSnapshot { Id = "protocol-ranks", Round = 13, LiveObserver = true, Players = players, States = states, Ranks = ranks, TradingOpen = true };
+            var s = new MatchSnapshot { Id = "protocol-ranks", Round = 9, LiveObserver = true, Players = players, States = states, Ranks = ranks, TradingOpen = true };
             var b = new PredictionBook(1000); Market m = b.Observe(s, ratings);
             if (b.Buy(s, players[6].Uid, 8, 40, m.TradeVersion) != null || b.Buy(s, players[4].Uid, 6, 10, m.TradeVersion) != null)
                 throw new Exception("Protocol rank fixture purchase failed");
@@ -147,7 +165,7 @@ namespace YxPrediction
             b = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b)))); m = b.Find(s.Id);
             for (int i = 0; i < 8; i++) { states[i] = GameRanks.ReadState(life[i], 0, 0, raw[i]); ranks[i] = GameRanks.FromProtocol(raw[i]); }
             b.Observe(s, null);
-            if (b.Balance != expected || m.KnownRanks[6] != 8 || !m.Positions[6].Resolved || !m.TradingWindowOpen)
+            if (b.Balance != expected || m.KnownRanks[6] != 8 || !m.Positions[6].Resolved || m.TradingWindowOpen || !m.Locked)
                 throw new Exception("Normalized ranks did not recover pending rewards");
             s.Ended = true; b.Observe(s, null);
             if (!m.Settled || m.FinalRanks[5] != 1 || b.Balance != expected) throw new Exception("Zero based winner settlement failed");

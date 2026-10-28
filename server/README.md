@@ -49,3 +49,11 @@ Account access applies the policy, including legacy low-balance accounts. During
 ## 0.7.10 grant notification receipts
 
 Each successful grant increments the account's durable `reliefCount`; room views include it, defaulting to zero for legacy accounts. The counter and balance share the same commit and roll back together. Polls, duplicate operation IDs and process restarts do not increment it. The client stores its acknowledged count per service/identity and displays only unseen actual grants. This enables a dismissible notification that automatically closes after three seconds, without a permanent footer rule. Deploy this version of rooms.mjs to supply online grant receipts; old servers cannot provide accurate grant-only notifications. No public service deployment was performed.
+
+## 0.7.11 departure and round-ten close
+
+Deploy both rooms.mjs and server.mjs for the authenticated `abandon` action: `{code, gameId, operation}`. Membership and game identity must match. It durably forfeits this account's unresolved rights, never refunds principal, preserves paid rewards and returns `abandonConfirmed: true`. Repeated requests do not repeat relief. Forfeiture applies only to this account/game and prevents new bets even after rejoining. All rooms still participate in the no-pending-bets relief guard. Mutation and relief share the same save transaction and rollback. Views expose `forfeited` and `tradingClosed`.
+
+Round ten's preparation remains tradable. `closedThrough >= 10` or `round > 10` latches trading closed; no buy/half/sell/switch after that, including legacy saved rooms lacking the new flag. Later results still settle. New clients durably retry departure requests using original credentials and server; unsupported old services never confirm or receive client-invented credits. No public service deployment was performed.
+
+Current rule-2 simultaneous eliminations require distinct game-confirmed ranks forming the bottom tail before paying. UID remapping makes display order irrelevant. Each locked claim pays once: exact 100%, adjacent 25% rounded down, otherwise zero. A final snapshot never repays a resolved position. Legacy pool rooms retain their pool contract; forfeited members cannot receive later pool payouts.

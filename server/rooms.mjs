@@ -19,8 +19,8 @@ export class Rooms {
     finally { this.committing = false; }
   }
   hasPendingBets(key) {
-    // Include stale/ended rooms: only settlement or selling releases a wager.
-    return Object.values(this.state.rooms).some(room => !room.settled
+    // Include stale/ended rooms: only settlement, selling or explicit departure releases a wager.
+    return Object.values(this.state.rooms).some(room => !room.settled && !room.forfeited?.[key]
       && (room.positions[key] ?? []).some(p => p && !p.resolved && (p.stake > 0 || p.claim > 0)));
   }
   account(key) {
@@ -118,7 +118,7 @@ export class Rooms {
     requireThat(typeof excludedCode === 'string' && (excludedCode === '' || /^[0-9]{6}$/.test(excludedCode)), '排除房间号无效');
     const candidates = Object.values(this.state.rooms).filter(r => r.code !== excludedCode && r.allowMatch !== false && this.isOpen(r)
       && !r.settled && r.members.length < 32 && typeof r.gameRoomId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(r.gameRoomId)
-      && Object.values(r.positions).some(positions => positions.some(p => p && p.stake > 0)));
+      && Object.entries(r.positions).some(([key,positions]) => !r.forfeited?.[key] && positions.some(p => p && !p.resolved && p.stake > 0)));
     requireThat(candidates.length > 0, '暂无房主在线、已有人投入且可加入的开放房间', 404);
     const r = candidates[randomInt(candidates.length)];
     // Selection grants no membership and spends nothing. Join verifies the actual observed game later.
@@ -131,7 +131,7 @@ export class Rooms {
     if(r.rules===2 && (r.quoteRound === undefined || s.round>r.round)){
       if(s.baseRates) r.baseRates=r.players.flatMap(player=>{const at=s.players.findIndex(p=>p.uid===player.uid);return s.baseRates.slice(at*8,at*8+8);});
       const totals=Array.from({length:8},()=>Array(8).fill(0));
-      for(const ps of Object.values(r.positions)) for(let i=0;i<8;i++) if(ps[i]&&!ps[i].resolved)totals[i][ps[i].rank-1]+=ps[i].stake;
+      for(const [key,ps] of Object.entries(r.positions)) if(!r.forfeited?.[key]) for(let i=0;i<8;i++) if(ps[i]&&!ps[i].resolved)totals[i][ps[i].rank-1]+=ps[i].stake;
       const quotes=quoteRates(r.baseRates,totals);r.factors=quotes.factors;r.quoteRates=quotes.rates;r.quoteRound=s.round;
     }
     if(r.rules===2 && s.baseRates){
@@ -144,13 +144,14 @@ export class Rooms {
     const ranks = r.players.map(p => s.ranks[s.players.findIndex(q => q.uid === p.uid)]);
     // Any ended message locks permanently, including incomplete final ranks.
     r.round = s.round; r.closedThrough = Math.max(r.closedThrough, s.closedThrough); r.ended ||= s.ended;
-    r.open = !r.ended && s.open && r.round > r.closedThrough && (r.rules!==2 || r.ranks.filter(rank=>rank===0).length>=2);
+    r.tradingClosed ||= r.round > 10 || r.closedThrough >= 10;
+    r.open = !r.ended && !r.tradingClosed && s.open && r.round > r.closedThrough && (r.rules!==2 || r.ranks.filter(rank=>rank===0).length>=2);
     for (let i = 0; i < 8; i++) {
       if (r.ranks[i] && ranks[i] && r.ranks[i] !== ranks[i]) throw new RoomError('确定名次冲突');
       if (ranks[i]) r.ranks[i] = ranks[i];
     }
     const known = r.ranks.filter(Boolean); requireThat(new Set(known).size === known.length, '名次重复');
-    if(r.rules===2 && !r.ended) requireThat(known.every(rank=>rank>8-known.length),'淘汰名次尚未对齐');
+    if(r.rules===2 && known.length<8) requireThat(known.every(rank=>rank>8-known.length),'淘汰名次尚未对齐');
     if(r.rules===2 && known.length>=7)r.open=false;
     if(r.rules===2) this.settleKnown(r);
     if (r.ended && !r.settled && known.length === 8) this.settle(r);
@@ -160,15 +161,27 @@ export class Rooms {
     const r = this.room(code, key); requireThat(r.host === key, '只有房主可以同步战果', 403);
     const s = this.snapshot(snapshot);
     const result = this.commit(() => { this.apply(r, s); return this.view(code, key); });
-    this.syncTimes.set(code, this.now()); return { ...result, open: r.open && !r.settled };
+    this.syncTimes.set(code, this.now()); return { ...result, open: r.open && !r.settled && !r.forfeited?.[key] };
   }
-  isOpen(r) { return r.open && !r.ended && this.now() - (this.syncTimes.get(r.code) ?? -Infinity) <= 15000; }
+  isOpen(r) { return r.open && !r.ended && !r.tradingClosed && r.round <= 10 && r.closedThrough < 10 && this.now() - (this.syncTimes.get(r.code) ?? -Infinity) <= 15000; }
+  abandon(code, key, gameId, operation) {
+    const r = this.room(code, key);
+    requireThat(r.gameId === gameId, '离场投注与当前房间对局不一致');
+    requireThat(typeof operation === 'string' && /^[a-zA-Z0-9-]{8,80}$/.test(operation), '操作标识无效');
+    return this.commit(() => {
+      if (!r.settled && !r.forfeited?.[key]) {
+        (r.forfeited ??= {})[key] = true; r.version++;
+      }
+      return { ...this.view(code, key), abandonConfirmed: true };
+    });
+  }
   trade(code, key, input) {
     let r = this.room(code, key);
     requireThat(typeof input.operation === 'string' && /^[a-zA-Z0-9-]{8,80}$/.test(input.operation), '操作标识无效');
     const receiptKey = key + ':' + input.operation;
     if (r.receipts[receiptKey]) return { ...this.view(code, key), duplicate: true };
-    requireThat(this.isOpen(r), '交易暂停：等待房主同步下一轮修炼状态');
+    requireThat(!r.forfeited?.[key], '离场已放弃本局未结算投注，不能重新下注');
+    requireThat(this.isOpen(r), r.tradingClosed || r.round > 10 || r.closedThrough >= 10 ? '第10轮结束，已封盘' : '交易暂停：等待房主同步下一轮修炼状态');
     requireThat(integer(input.version, 0, 1000000000) && input.version === r.version, '报价已变化，请刷新后重试', 409);
     requireThat(integer(input.player, 0, 7) && !r.ranks[input.player], '该选手已确定名次，停止交易');
     if(r.rules===2) requireThat((r.actionCounts?.[key]?.[input.player] ?? 0)<512,'该选手本局操作次数已达512次');
@@ -212,6 +225,7 @@ export class Rooms {
   }
   settleKnown(r){
     for(const [key,ps] of Object.entries(r.positions)){
+      if(r.forfeited?.[key])continue;
       for(let i=0;i<8;i++){
         const p=ps[i];if(!p||p.resolved||!r.ranks[i])continue;
         const payout=returnFor(p.claim,p.rank,r.ranks[i]);
@@ -224,11 +238,11 @@ export class Rooms {
     if(r.rules===2){this.settleKnown(r);r.settled=true;r.open=false;return;}
     for (let i = 0; i < 8; i++) {
       let pool = 0, winnerStake = 0;
-      for (const positions of Object.values(r.positions)) {
-        const p = positions[i]; if (!p) continue; pool += p.stake; if (p.rank === r.ranks[i]) winnerStake += p.stake;
+      for (const [key,positions] of Object.entries(r.positions)) {
+        const p = positions[i]; if (!p) continue; pool += p.stake; if (!r.forfeited?.[key] && p.rank === r.ranks[i]) winnerStake += p.stake;
       }
       for (const [key, positions] of Object.entries(r.positions)) {
-        const p = positions[i]; if (!p) continue;
+        const p = positions[i]; if (!p || r.forfeited?.[key]) continue;
         // No correct guesses: refund that player's pool. Integer dust stays unissued.
         const payout = !winnerStake ? p.stake : p.rank === r.ranks[i]
           ? Number(BigInt(pool) * BigInt(p.stake) / BigInt(winnerStake)) : 0;
@@ -240,9 +254,9 @@ export class Rooms {
   }
   view(code, key) {
     const r = this.room(code, key), totals = Array.from({length: 8}, () => Array(8).fill(0));
-    for (const ps of Object.values(r.positions)) for (let i = 0; i < 8; i++) if (ps[i]) totals[i][ps[i].rank - 1] += ps[i].stake;
+    for (const [member,ps] of Object.entries(r.positions)) if(r.rules!==2 || !r.forfeited?.[member]) for (let i = 0; i < 8; i++) if (ps[i]) totals[i][ps[i].rank - 1] += ps[i].stake;
     return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, memberDetails: r.members.map(member => ({ id: createHash('sha256').update(member).digest('hex').slice(0,16), name: this.state.accounts[member].name, uid: this.state.accounts[member].uid ?? '' })), round: r.round, version: r.version,
-      reliefAmount: 50, reliefRequiresNoPendingBets: true, reliefCount: this.account(key).reliefCount ?? 0, allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r), ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
+      reliefAmount: 50, reliefRequiresNoPendingBets: true, reliefCount: this.account(key).reliefCount ?? 0, allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r) && !r.forfeited?.[key], tradingClosed: !!r.tradingClosed || r.round > 10 || r.closedThrough >= 10, forfeited: !!r.forfeited?.[key], ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
       positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
   }
 }

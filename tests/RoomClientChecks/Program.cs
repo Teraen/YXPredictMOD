@@ -76,7 +76,7 @@ internal static class Program
     {
         UnityEngine.Networking.UnityWebRequest.Sent.Clear();UnityEngine.Time.unscaledTime=0;
         var mod=host.Load<PredictionMod>(Id,"0.7.4");mod.Snapshot=Snapshot();
-        Set(mod.Client,"_token",new string('a',48));Set(mod.Client,"_code","123456");Set(mod.Client,"<State>k__BackingField",RoomState.Read(View()));
+        Set(mod.Client,"_token",new string('a',48));Set(mod.Client,"_code","123456");Set(mod.Client,"<State>k__BackingField",RoomState.Read(Json.ParseObject(Json.Serialize(View()))));
         return mod;
     }
     static int Pending(PredictionMod mod) { return RoomFinalSync.Read(mod.Ctx.Data.Get<Dictionary<string,object>>(RoomFinalSync.SaveKey,null)).Count; }
@@ -152,6 +152,79 @@ internal static class Program
             Complete(settled:true);UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();Require(Pending(mod)==0,"Recovered book result was not confirmed");
         }
     }
+    static int Departures(PredictionMod mod) { return RoomDepartureSync.Read(mod.Ctx.Data.Get<Dictionary<string,object>>(RoomDepartureSync.SaveKey,null)).Count; }
+    static void Holding(PredictionMod mod)
+    {
+        var state=View();((List<object>)state["positions"])[0]=new Dictionary<string,object>{{"rank",1},{"stake",1000}};
+        Set(mod.Client,"<State>k__BackingField",RoomState.Read(Json.ParseObject(Json.Serialize(state))));
+    }
+    static void CompleteDeparture(bool ack=true,long relief=1,string game="game")
+    {
+        var data=View();data["gameId"]=game;data["abandonConfirmed"]=ack;data["forfeited"]=true;data["open"]=false;data["balance"]=50;data["reliefCount"]=relief;
+        Last.isDone=true;Last.downloadHandler.text=Json.Serialize(new Dictionary<string,object>{{"ok",true},{"data",data}});
+    }
+    static void DepartureDelivery()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);Holding(mod);
+            mod.Client.ObserveLocation("game");Require(Departures(mod)==0,"Focus change forfeited same game");
+            mod.Snapshot=null;mod.Client.ObserveLocation(null);Require(Departures(mod)==1,"Departure not persisted immediately");
+            mod.Client.Update();Require((string)Last.Body["action"]=="abandon","Departure action not sent");
+            string operation=(string)Last.Body["operation"];
+            CompleteDeparture(false);UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();Require(Departures(mod)==1,"Legacy response confirmed unsupported forfeiture");
+            UnityEngine.Time.unscaledTime=6;mod.Client.Update();Require((string)Last.Body["operation"]==operation,"Retry operation identity changed");
+            CompleteDeparture(game:"other");UnityEngine.Time.unscaledTime=6.1f;mod.Client.Update();Require(Departures(mod)==1,"Mismatched game confirmed departure");
+            UnityEngine.Time.unscaledTime=12;mod.Client.Update();CompleteDeparture();UnityEngine.Time.unscaledTime=12.1f;mod.Client.Update();
+            Require(Departures(mod)==0&&mod.Client.State.Forfeited,"Valid acknowledgement not applied");
+            Require(mod.ReliefNotices.PendingAmount==50,"Actual relief not notified");
+        }
+    }
+    static void DepartureReloadIsolation()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);Holding(mod);mod.Client.ObserveLocation(null);
+            var data=new Dictionary<string,object>{{RoomDepartureSync.SaveKey,mod.Ctx.Data.Get<Dictionary<string,object>>(RoomDepartureSync.SaveKey,null)}};
+            mod=host.Reload<PredictionMod>(Id,"0.7.11",data:data);
+            host.SetConfig(Id,new Dictionary<string,object>{{"online",new Dictionary<string,object>{{"server","https://other.example"}}}});
+            mod.Client.Update();Require(Last.url==Server+"/v1/room"&&Last.Headers["Authorization"]=="Bearer "+new string('a',48),"Departure sent to another service/identity");
+            CompleteDeparture();UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();Require(Departures(mod)==0,"Reloaded departure not confirmed");
+            Require(mod.Client.State==null&&mod.ReliefNotices.PendingAmount==0,"Another identity received old departure credits");
+        }
+    }
+    static void InFlightDeparture()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);mod.Client.Trade("buy",0,1,1000);
+            Require((string)Last.Body["action"]=="trade","Fixture did not start purchase");
+            mod.Snapshot=null;mod.Client.ObserveLocation(null);Require(Departures(mod)==1,"In-flight purchase was missed");
+            var data=View();((List<object>)data["positions"])[0]=new Dictionary<string,object>{{"rank",1},{"stake",1000}};
+            Last.isDone=true;Last.downloadHandler.text=Json.Serialize(new Dictionary<string,object>{{"ok",true},{"data",data}});
+            UnityEngine.Time.unscaledTime=0.1f;mod.Client.Update();mod.Client.Update();Require((string)Last.Body["action"]=="abandon","Purchase not reconciled before abandonment");
+            CompleteDeparture();UnityEngine.Time.unscaledTime=0.2f;mod.Client.Update();Require(Departures(mod)==0,"In-flight departure did not finish");
+        }
+    }
+    static void CompletedResultsAndCutoff()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);Holding(mod);mod.Client.CaptureFinalSnapshot(Snapshot(true));mod.Client.ObserveLocation(null);
+            Require(Departures(mod)==0&&Pending(mod)==1,"Complete final results were forfeited instead of retried");
+        }
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);Holding(mod);mod.Client.CaptureFinalSnapshot(Snapshot(true,3));mod.Client.ObserveLocation(null);
+            Require(Departures(mod)==1,"Partial final blocked departure forever");
+        }
+        foreach(bool nextRound in new[]{false,true})
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);if(nextRound)mod.Snapshot.Round=11;else mod.Snapshot.ResultsThroughRound=10;
+            mod.Client.Trade("buy",0,1,10);Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==0,"Client allowed trading after ten using stale server state");
+        }
+    }
     static bool Calls(MethodDefinition method,string name)
     { foreach(var i in method.Body.Instructions){var call=i.Operand as MethodReference;if(call!=null&&call.Name==name)return true;}return false; }
     static void Bindings(string path)
@@ -160,6 +233,8 @@ internal static class Program
         {
             string[] types={"PredictionMod","CharacterBetBar","RoomPanel"};string[] methods={"AcceptSnapshot","Update","CurrentView"};string[] targets={"CaptureFinalSnapshot","Selected","Observe"};
             for(int n=0;n<types.Length;n++){bool found=false;foreach(var method in module.GetType("YxPrediction."+types[n]).Methods)if(method.Name==methods[n])found=Calls(method,targets[n]);Require(found,"Missing production binding "+types[n]);}
+            foreach(var method in module.GetType("YxPrediction.GameBridge").Methods)
+                if(method.Name=="Poll"||method.Name=="OnStatus")Require(Calls(method,"ObserveLocation"),"Confirmed location is not wired to departure handling");
             var popup=module.GetType("YxPrediction.ReliefPopup");Require(popup!=null,"Relief popup missing from game DLL");
             foreach(var method in module.GetType("YxPrediction.PredictionMod").Methods)
             {
@@ -181,6 +256,10 @@ internal static class Program
     static void Main(string[] args)
     {
         if(args.Length>0){Bindings(args[0]);return;}
+        DepartureDelivery();Console.WriteLine("PASS departure requires matching acknowledgement, retries durably and notifies actual relief");
+        DepartureReloadIsolation();Console.WriteLine("PASS departure queue survives reload without leaking credentials or notices to another service");
+        InFlightDeparture();Console.WriteLine("PASS in-flight purchase completes before departure forfeiture");
+        CompletedResultsAndCutoff();Console.WriteLine("PASS complete final rewards survive departure, incomplete wagers forfeit, tenth-round cutoff is enforced locally");
         FinalDelivery(false);Console.WriteLine("PASS final result persisted before leaving and delivered after scene is gone");
         FinalDelivery(true);Console.WriteLine("PASS lost final request retries after leaving, acknowledgement stops retries");
         ReloadAndEndpointIsolation();Console.WriteLine("PASS final queue survives reload and isolates server credentials/connections");
