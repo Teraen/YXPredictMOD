@@ -19,7 +19,12 @@ namespace YxPrediction
         public long[] Claims=new long[8], FinalPayouts=new long[8];
         public long Balance, Payout;
         public readonly string[] Uids = new string[8], Names = new string[8];
-        public readonly int[] Ranks = new int[8], MyRanks = new int[8];
+        public readonly int[] Ranks = new int[8], MyRanks = new int[8], RankMinimum = new int[8], RankMaximum = new int[8];
+        public string ResultPlace(int player)
+        {
+            return RankMinimum[player] > 0 && RankMinimum[player] < RankMaximum[player]
+                ? "第" + RankMinimum[player].ToString(CultureInfo.InvariantCulture) + "–" + RankMaximum[player].ToString(CultureInfo.InvariantCulture) + "名同出" : "最终第" + Ranks[player].ToString(CultureInfo.InvariantCulture) + "名";
+        }
         public readonly long[] Stakes = new long[8], Pools = new long[64];
         public bool HasPendingBets
         {
@@ -65,6 +70,10 @@ namespace YxPrediction
                 var player = players[i] as Dictionary<string, object>;
                 r.Uids[i] = Json.GetString(player, "uid", ""); r.Names[i] = Json.GetString(player, "name", "");
                 r.Ranks[i] = Convert.ToInt32(ranks[i], CultureInfo.InvariantCulture);
+                var minimum = Json.GetArray(d,"rankMinimum"); var maximum = Json.GetArray(d,"rankMaximum");
+                if ((minimum != null && minimum.Count != 8) || (maximum != null && maximum.Count != 8)) throw new FormatException("名次区间维度错误");
+                r.RankMinimum[i] = minimum == null ? r.Ranks[i] : Convert.ToInt32(minimum[i],CultureInfo.InvariantCulture);
+                r.RankMaximum[i] = maximum == null ? r.Ranks[i] : Convert.ToInt32(maximum[i],CultureInfo.InvariantCulture);
                 var pos = positions[i] as Dictionary<string, object>;
                 if (pos != null) { r.MyRanks[i] = (int)Json.GetNumber(pos, "rank", 0); r.Stakes[i] = (long)Json.GetNumber(pos, "stake", 0); r.Claims[i]=(long)Json.GetNumber(pos,"claim",r.Stakes[i]);r.FinalPayouts[i]=(long)Json.GetNumber(pos,"payout",0); }
                 var totals = pools[i] as List<object>; if (totals == null || totals.Count != 8) throw new FormatException("资金池维度错误");

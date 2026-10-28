@@ -215,39 +215,70 @@ namespace YxPrediction
                     states[market.FindPlayer(snapshot.Players[i].Uid)] = snapshot.States[i];
                 }
             }
-            var known = new int[8]; var seen = new bool[9];
-            if (final == null && states != null)
+            bool grouped = snapshot.EliminationRounds != null && snapshot.EliminationRounds.Length == 8;
+            for (int i = 0; i < 8; i++) if (market.EliminationRounds[i] > 0) grouped = true;
+            EliminationPlan plan = null;
+            int[] known;
+            if (grouped)
             {
-                int alive = 0;
-                for (int i = 0; i < 8; i++) if (states[i].Life > 0) alive++;
+                if (!snapshot.Ended && !snapshot.TradingOpen && !snapshot.RoundResultsComplete)
+                { market.TradingWaitReason = "等待本轮完整战果，防止把同出拆为单人结算"; return; }
+                var incoming = new int[8]; var rounds = new int[8]; var dead = new bool[8];
                 for (int i = 0; i < 8; i++)
-                    if ((states[i].Life > 0 && states[i].FinalRank != 0)
-                        || (states[i].Life <= 0 && states[i].FinalRank > 0 && states[i].FinalRank <= alive))
-                    { market.TradingWaitReason = "确定名次与存活人数尚未对齐"; return; }
+                {
+                    int at = market.FindPlayer(snapshot.Players[i].Uid);
+                    incoming[at] = final != null ? final[at] : states != null && states[at].Life <= 0 ? states[at].FinalRank : 0;
+                    dead[at] = final != null || (states != null && states[at].Life <= 0) || market.KnownRanks[at] > 0;
+                    rounds[at] = snapshot.EliminationRounds == null ? 0 : snapshot.EliminationRounds[i];
+                }
+                try { plan = EliminationPlan.Build(incoming, rounds, dead, market.KnownRanks, market.RankMinimum, market.RankMaximum, market.EliminationRounds); }
+                catch (ArgumentException ex) { market.TradingWaitReason = ex.Message; return; }
+                known = plan.Ranks;
+                if (states != null)
+                    for (int i = 0; i < 8; i++) if (dead[i] && known[i] > 0) states[i] = new PlayerState(states[i].Life, states[i].Wins, states[i].Losses, known[i]);
             }
-            for (int i = 0; i < 8; i++)
+            else
             {
-                int rank = final != null ? final[i] : (states != null && states[i].Life <= 0 ? states[i].FinalRank : 0);
-                if (rank == 0) rank = market.KnownRanks[i];
-                if ((market.KnownRanks[i] > 0 && rank != market.KnownRanks[i]) || (rank > 0 && seen[rank])
-                    || (final == null && market.KnownRanks[i] > 0 && states != null && states[i].Life > 0))
-                { market.TradingWaitReason = "淘汰名次正在同步"; return; }
-                known[i] = rank; if (rank > 0) seen[rank] = true;
+                known = new int[8]; var seen = new bool[9];
+                if (final == null && states != null)
+                {
+                    int alive = 0;
+                    for (int i = 0; i < 8; i++) if (states[i].Life > 0) alive++;
+                    for (int i = 0; i < 8; i++)
+                        if ((states[i].Life > 0 && states[i].FinalRank != 0)
+                            || (states[i].Life <= 0 && states[i].FinalRank > 0 && states[i].FinalRank <= alive))
+                        { market.TradingWaitReason = "确定名次与存活人数尚未对齐"; return; }
+                }
+                for (int i = 0; i < 8; i++)
+                {
+                    int rank = final != null ? final[i] : (states != null && states[i].Life <= 0 ? states[i].FinalRank : 0);
+                    if (rank == 0) rank = market.KnownRanks[i];
+                    if ((market.KnownRanks[i] > 0 && rank != market.KnownRanks[i]) || (rank > 0 && seen[rank])
+                        || (final == null && market.KnownRanks[i] > 0 && states != null && states[i].Life > 0))
+                    { market.TradingWaitReason = "淘汰名次正在同步"; return; }
+                    known[i] = rank; if (rank > 0) seen[rank] = true;
+                }
+                int confirmed = 0;
+                for (int i = 0; i < 8; i++) if (known[i] > 0) confirmed++;
+                if (final == null)
+                    for (int i = 0; i < 8; i++) if (known[i] > 0 && known[i] <= 8 - confirmed)
+                    { market.TradingWaitReason = "淘汰名次尚未对齐，等待同轮完整结果"; return; }
             }
-            int confirmed = 0;
-            for (int i = 0; i < 8; i++) if (known[i] > 0) confirmed++;
-            if (final == null)
-                for (int i = 0; i < 8; i++) if (known[i] > 0 && known[i] <= 8 - confirmed)
-                { market.TradingWaitReason = "淘汰名次尚未对齐，等待同轮完整结果"; return; }
             // 先验证整批，再逐人结算；部分淘汰可以提前入账，最终结果不重复派奖。
             long payment = 0;
-            for (int i = 0; i < 8; i++) if (known[i] > 0 && !market.Positions[i].Resolved) payment += market.Positions[i].ReturnFor(known[i]);
+            for (int i = 0; i < 8; i++) if (known[i] > 0 && !market.Positions[i].Resolved) payment += plan == null ? market.ReturnFor(i, known[i]) : EliminationPlan.Return(market.Positions[i].Claim, market.Positions[i].Rank, plan.Minimum[i], plan.Maximum[i]);
             if (payment > Odds.MaximumBalance - Balance) throw new InvalidOperationException("积分余额超过上限，保留待结算");
+            if (plan != null)
+                for (int i = 0; i < 8; i++)
+                {
+                    if (market.EliminationRounds[i] != plan.Rounds[i] || market.RankMinimum[i] != plan.Minimum[i] || market.RankMaximum[i] != plan.Maximum[i])
+                    { market.EliminationRounds[i] = plan.Rounds[i]; market.RankMinimum[i] = plan.Minimum[i]; market.RankMaximum[i] = plan.Maximum[i]; TradingChange(market); }
+                }
             for (int i = 0; i < 8; i++)
             {
                 if (known[i] == 0 || market.Positions[i].Resolved) continue;
                 Position position = market.Positions[i];
-                market.KnownRanks[i] = known[i]; position.FinalPayout = position.ReturnFor(known[i]); position.Resolved = true;
+                market.KnownRanks[i] = known[i]; position.FinalPayout = market.ReturnFor(i, known[i]); position.Resolved = true;
                 TradingChange(market);
             }
             Balance += payment; market.TotalPayout += payment;

@@ -225,6 +225,17 @@ internal static class Program
             mod.Client.Trade("buy",0,1,10);Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==0,"Client allowed trading after ten using stale server state");
         }
     }
+    static void CohortTransport()
+    {
+        var s=Snapshot();s.EliminationRounds=new[]{0,0,0,0,0,0,5,5};s.TradingOpen=false;
+        var wire=Json.ParseObject(Json.Serialize(RoomClient.Snapshot(s)));
+        Require(Json.GetArray(wire,"eliminationRounds").Count==8&&!Json.GetBool(wire,"roundComplete",true),"Partial battle transport lost evidence");
+        s.RoundResultsComplete=true;wire=Json.ParseObject(Json.Serialize(RoomClient.Snapshot(s)));Require(Json.GetBool(wire,"roundComplete",false),"Complete result did not reach server");
+        var q=new RoomFinalSync();s.Ended=true;s.Ranks=new[]{1,2,3,4,5,6,7,8};q.Capture(Server,"token","123456",RoomClient.Snapshot(s));
+        q=RoomFinalSync.Read(Json.ParseObject(Json.Serialize(q.Write())));Require(Json.GetArray(q.At(0).Snapshot,"eliminationRounds").Count==8,"Durable final lost cohort evidence");
+        var view=View();view["rankMinimum"]=new List<object>{0,0,0,0,0,0,7,7};view["rankMaximum"]=new List<object>{0,0,0,0,0,0,8,8};
+        var state=RoomState.Read(Json.ParseObject(Json.Serialize(view)));Require(state.ResultPlace(6)=="第7–8名同出","UI shows provisional individual order instead of cohort interval");
+    }
     static bool Calls(MethodDefinition method,string name)
     { foreach(var i in method.Body.Instructions){var call=i.Operand as MethodReference;if(call!=null&&call.Name==name)return true;}return false; }
     static void Bindings(string path)
@@ -256,6 +267,7 @@ internal static class Program
     static void Main(string[] args)
     {
         if(args.Length>0){Bindings(args[0]);return;}
+        CohortTransport();Console.WriteLine("PASS cohort rounds and complete-result evidence survive host transport, retries and interval UI decoding");
         DepartureDelivery();Console.WriteLine("PASS departure requires matching acknowledgement, retries durably and notifies actual relief");
         DepartureReloadIsolation();Console.WriteLine("PASS departure queue survives reload without leaking credentials or notices to another service");
         InFlightDeparture();Console.WriteLine("PASS in-flight purchase completes before departure forfeiture");

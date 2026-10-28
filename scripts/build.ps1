@@ -29,7 +29,7 @@ try {
     if ($Demo) { Invoke-Dotnet run --project tests/PredictionChecks.csproj --no-build -- --demo }
     if (!$CoreOnly -and !(Test-Path -LiteralPath 'refs/UnityEngine.UnityWebRequestModule.dll')) { throw '完整游戏版需要先运行 scripts/prepare-game.ps1。纯逻辑验证可用 -CoreOnly。' }
     Invoke-Dotnet restore mod/PredictionPoints.csproj --configfile NuGet.Config
-    if ($CoreOnly) { Invoke-Dotnet build mod/PredictionPoints.csproj -c Release --no-restore -p:CoreOnly=true }
+    if ($CoreOnly) { Invoke-Dotnet build mod/PredictionPoints.csproj -c Release --no-restore '-p:CoreOnly=true' }
     else { Invoke-Dotnet build mod/PredictionPoints.csproj -c Release --no-restore }
     Invoke-Dotnet vendor/yixianpai-mod-sdk/tools/yx-patch.dll check --warn-as-error --manifest mod/manifest.json mod/plugins/PredictionPoints.dll
     if (!$CoreOnly) { Invoke-Dotnet run --project tests/RoomClientChecks/RoomClientChecks.csproj --no-build -- (Join-Path $root 'mod/plugins/PredictionPoints.dll') }

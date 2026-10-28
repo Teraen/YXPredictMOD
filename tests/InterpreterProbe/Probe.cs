@@ -39,6 +39,7 @@ namespace YxPrediction
             RankSelectionFlow(players, ratings);
             ProtocolRankFlow(players, ratings);
             DepartureClosingFlow(players, ratings);
+            CohortFlow(players, ratings);
             HorseFlow(players, ratings);
             PanelLayoutFlow();
             RoomWireFixture.Verify();
@@ -129,6 +130,23 @@ namespace YxPrediction
             if (!profile.Spinning || profile.DaoXinGames != 2 || profile.Rating.Score != 3500) throw new Exception("Horse profile failed under interpreter");
             s.Id = "new-horses"; roster.Observe(s, profiles);
             if (roster.Find(players[7].Uid).ConsecutiveWins != 0) throw new Exception("Horse state leaked across matches");
+        }
+
+        static void CohortFlow(Player[] players, Rating[] ratings)
+        {
+            for (int predicted = 6; predicted <= 8; predicted++)
+            {
+                var states = new PlayerState[8]; for (int i = 0; i < 8; i++) states[i] = new PlayerState(100,0,0,0);
+                var s = new MatchSnapshot { Id = "cohort", Round = 4, LiveObserver = true, TradingOpen = true, Players = players, States = states, EliminationRounds = new int[8] };
+                var b = new PredictionBook(1000); Market m = b.Observe(s,ratings); b.Buy(s,players[7].Uid,predicted,100,m.TradeVersion); long claim = m.Positions[7].Claim;
+                s.Round=5;s.TradingOpen=false;s.RoundResultsComplete=true;s.EliminationRounds[6]=s.EliminationRounds[7]=5;
+                states[6]=states[7]=new PlayerState(0,2,3,0);b.Observe(s,null);
+                long expected=900+(predicted==6?0:claim);
+                if (b.Balance!=expected || !m.Positions[7].Resolved || m.RankMinimum[7]!=7 || m.RankMaximum[7]!=8) throw new Exception("Cohort payout failed");
+                b=BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b))));b.Observe(s,null);
+                s.Ended=true;s.Ranks=new int[]{1,2,3,4,5,6,8,7};b.Observe(s,null);
+                if(b.Balance!=expected || !b.Find(s.Id).Settled) throw new Exception("Cohort reload/final paid twice");
+            }
         }
 
         static void DepartureClosingFlow(Player[] players, Rating[] ratings)

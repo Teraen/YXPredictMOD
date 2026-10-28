@@ -160,7 +160,7 @@ namespace YxPrediction
             Market market = _mod.Book.Find(State.GameId);
             if (market != null && market.Settled && market.FinalRanks != null)
                 CaptureFinalSnapshot(new MatchSnapshot { Id = market.Id, Round = market.HighestRound, Players = market.Players,
-                    Ranks = market.FinalRanks, Ended = true, ResultsThroughRound = market.ClosedThroughRound });
+                    Ranks = market.FinalRanks, EliminationRounds = market.EliminationRounds, Ended = true, ResultsThroughRound = market.ClosedThroughRound });
         }
         void CompleteFinalRequest()
         {
@@ -197,7 +197,13 @@ namespace YxPrediction
                 int rank = s.Ended ? s.Ranks[i] : s.States != null && s.States[i] != null && s.States[i].Life <= 0 ? s.States[i].FinalRank : 0;
                 ranks.Add(rank >= 1 && rank <= 8 ? rank : 0);
             }
-            d["players"] = players; d["ranks"] = ranks; return d;
+            d["players"] = players; d["ranks"] = ranks;
+            if (s.EliminationRounds != null && s.EliminationRounds.Length == 8)
+            {
+                var rounds = new List<object>(); for (int i = 0; i < 8; i++) rounds.Add(s.EliminationRounds[i]);
+                d["eliminationRounds"] = rounds; d["roundComplete"] = s.Ended || s.TradingOpen || s.RoundResultsComplete;
+            }
+            return d;
         }
         Dictionary<string, object> Body(string action) { var d = new Dictionary<string, object>(); d["action"] = action; if (!string.IsNullOrEmpty(_code)) d["code"] = _code; return d; }
         public bool Create(bool allowMatch, string expectedNative)
@@ -424,7 +430,7 @@ namespace YxPrediction
                             if (Json.GetString(_sent, "action", "") == "trade") _pending = null;
                             SaveIdentity(); ObserveRelief(State);
                             if (_locationKnown && State.GameId != _activeGameId) CaptureDeparture(State);
-                            Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : State.Rules==2?"基础倍率 × 投注系数；本轮投入影响下一轮，差一名返权益25%":"旧房间沿用原资金池结算规则";
+                            Message = State.Settled ? "整局已结算，返还 " + PredictionMod.N(State.Payout) + " 分" : State.Rules==2?"基础倍率 × 投注系数；本轮投入影响下一轮，同出区间全中、区间外0；单出差一名返25%":"旧房间沿用原资金池结算规则";
                         }
                     }
                 }

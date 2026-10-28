@@ -41,6 +41,8 @@ namespace YxPrediction
         public PlayerState[] States;
         public string FocusedUid;
         public int[] RemainingSwaps;
+        public int[] EliminationRounds;
+        public bool RoundResultsComplete;
 
         public bool IsEightPlayerMatch()
         {
@@ -95,6 +97,12 @@ namespace YxPrediction
         public readonly Ticket[] Tickets = new Ticket[8];
         public readonly Position[] Positions = new Position[8];
         public readonly int[] KnownRanks = new int[8];
+        public readonly int[] RankMinimum = new int[8], RankMaximum = new int[8], EliminationRounds = new int[8];
+        public long ReturnFor(int player, int rank)
+        {
+            return RankMinimum[player] > 0 ? EliminationPlan.Return(Positions[player].Claim, Positions[player].Rank, RankMinimum[player], RankMaximum[player])
+                : Positions[player].ReturnFor(rank);
+        }
         public readonly LifeHistory[] Life = new LifeHistory[8];
         public readonly SwapHistory[] Swaps = new SwapHistory[8];
         public PlayerState[] QuoteStates;

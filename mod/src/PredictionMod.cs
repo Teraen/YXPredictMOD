@@ -145,7 +145,7 @@ namespace YxPrediction
                 _lastPreparationError = null;
                 if (revision == Book.Revision && !switched && wasOpen == m.TradingWindowOpen && previousWait == m.TradingWaitReason) return;
                 if (m.Settled) Message = "本局已结算，返还 " + N(m.TotalPayout) + " 积分（含中奖本金）";
-                else if (m.IsTrading) Message = m.TradingWindowOpen ? "交易开放：可增持、减半、清仓或换预测；差1名返正中总额25%" : m.TradingWaitReason;
+                else if (m.IsTrading) Message = m.TradingWindowOpen ? "交易开放：可增持、减半、清仓或换预测；同出区间全中、区间外0；单出差1名返25%" : m.TradingWaitReason;
                 else if (m.Locked) Message = "已封盘，等待整局结束及八人的最终名次";
                 else Message = m.HasAdjacentReward ? "每人独立下注；差1名返正中总额25%；第5轮结束封盘" : "旧盘口仅正中返还；每人独立下注；第5轮结束封盘";
             }

@@ -267,6 +267,7 @@ internal static partial class Program
         PanelLayoutChecks();
         ReliefChecks();
         DepartureAndClosingChecks();
+        CohortChecks();
         ReliefNoticeChecks();
         Check("room final snapshots persist, keep complete ranks and require matching settlement confirmation", RoomFixFixture.VerifyFinals);
         Check("room rank drafts share purchased updates by UID and keep bought players first", RoomFixFixture.VerifySelections);

@@ -388,3 +388,58 @@ test('incomplete ended snapshots also wait for aligned simultaneous elimination 
   assert.throws(()=>x.rooms.sync(x.code,x.a,partial),/对齐/);assert.deepEqual(x.rooms.state,before);
   partial.ranks[7]=8;const result=x.rooms.sync(x.code,x.a,partial);assert.equal(result.balance,1300);assert.equal(result.settled,false);
 });
+test('same-round seventh/eighth exits settle either prediction fully, sixth zero, without exact final ranks',()=>{
+ for(const player of [6,7])for(const predicted of [6,7,8])for(const duplicate of [false,true]){
+  const x=setup(undefined,2);x.trade(x.a,player,predicted,100);
+  x.snapshot.round=5;x.snapshot.eliminationRounds=[0,0,0,0,0,0,5,5];x.snapshot.roundComplete=true;x.snapshot.open=false;
+  x.snapshot.ranks=[0,0,0,0,0,0,duplicate?7:0,duplicate?7:0];
+  let v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.balance,predicted===6?900:1300);assert.equal(v.settled,false);
+  assert.equal(v.rankMinimum[player],7);assert.equal(v.rankMaximum[player],8);assert.equal(v.positions[player].resolved,true);
+  const restored=new Rooms(structuredClone(x.rooms.state));v=restored.sync(x.code,x.a,x.snapshot);assert.equal(v.balance,predicted===6?900:1300);
+  x.snapshot.ended=true;x.snapshot.round=20;x.snapshot.ranks=[1,2,3,4,5,6,8,7];v=restored.sync(x.code,x.a,x.snapshot);
+  assert.equal(v.balance,predicted===6?900:1300);assert.equal(v.settled,true);
+ }
+});
+test('three co-eliminated players accept sixth through eighth but no fifth-place adjacency',()=>{
+ for(const rank of [5,6,7,8]){
+  const x=setup(undefined,2);x.trade(x.a,5,rank,101);
+  Object.assign(x.snapshot,{round:5,eliminationRounds:[0,0,0,0,0,5,5,5],roundComplete:true});
+  const v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.balance,rank===5?899:1303);assert.equal(v.rankMinimum[5],6);assert.equal(v.rankMaximum[5],8);
+ }
+});
+test('a snapshot containing exits from different rounds cannot turn singles into a cohort',()=>{
+ const x=setup(undefined,2);x.trade(x.a,7,7,101);x.trade(x.a,6,8,101);
+ Object.assign(x.snapshot,{round:7,ranks:[0,0,0,0,0,0,7,8],eliminationRounds:[0,0,0,0,0,0,6,5],roundComplete:true});
+ const v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.balance,1000);assert.equal(v.rankMinimum[7],8);assert.equal(v.rankMaximum[6],7);
+});
+test('complete round arrives after partial battle packets; no premature singleton compensation',()=>{
+ const x=setup(undefined,2);x.trade(x.a,7,6,100);
+ Object.assign(x.snapshot,{round:5,ranks:[0,0,0,0,0,0,0,7],eliminationRounds:[0,0,0,0,0,0,0,5],roundComplete:false});
+ let v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.balance,900);assert.equal(v.positions[7].resolved,undefined);assert.equal(v.open,false);
+ x.snapshot.eliminationRounds[6]=5;x.snapshot.roundComplete=true;v=x.rooms.sync(x.code,x.a,x.snapshot);
+ assert.equal(v.balance,900);assert.equal(v.positions[7].resolved,true);assert.equal(v.positions[7].payout,0);
+});
+test('later sixth/seventh cohort excludes an earlier eighth-place exit and follows UID reordering',()=>{
+ const x=setup(undefined,2);x.trade(x.a,6,6,100);x.trade(x.a,5,8,100);
+ Object.assign(x.snapshot,{round:2,ranks:[0,0,0,0,0,0,0,8],eliminationRounds:[0,0,0,0,0,0,0,2],roundComplete:true});x.rooms.sync(x.code,x.a,x.snapshot);
+ Object.assign(x.snapshot,{round:4,eliminationRounds:[0,0,0,0,0,4,4,2]});x.snapshot.players.reverse();x.snapshot.ranks.reverse();x.snapshot.eliminationRounds.reverse();
+ const v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.balance,1200);assert.equal(v.rankMinimum[6],6);assert.equal(v.rankMaximum[6],7);assert.equal(v.positions[5].payout,0);
+});
+test('grouped payout and interval state roll back together when storage fails',()=>{
+ let fail=false;const x=setup(()=>{if(fail)throw Error('disk full');},2);x.trade(x.a,7,7,100);
+ Object.assign(x.snapshot,{round:5,eliminationRounds:[0,0,0,0,0,0,5,5],roundComplete:true});const before=structuredClone(x.rooms.state);fail=true;
+ assert.throws(()=>x.rooms.sync(x.code,x.a,x.snapshot),/disk full/);assert.deepEqual(x.rooms.state,before);
+ fail=false;assert.equal(x.rooms.sync(x.code,x.a,x.snapshot).balance,1300);
+});
+test('cohort metadata validates dimensions, round bounds and complete-round flag before mutation',()=>{
+ const x=setup(undefined,2);const before=structuredClone(x.rooms.state);
+ for(const eliminationRounds of [[5],Array(8).fill(-1),Array(8).fill(10)])assert.throws(()=>x.rooms.sync(x.code,x.a,{...x.snapshot,eliminationRounds,roundComplete:true}));
+ assert.throws(()=>x.rooms.sync(x.code,x.a,{...x.snapshot,eliminationRounds:Array(8).fill(0)}));assert.deepEqual(x.rooms.state,before);
+});
+test('upgrading a paid legacy pair keeps its payments frozen and permits later cohort settlement',()=>{
+ const x=setup(undefined,2);x.trade(x.a,5,5,100);
+ Object.assign(x.snapshot,{round:2,ranks:[0,0,0,0,0,0,7,8]});x.rooms.sync(x.code,x.a,x.snapshot);
+ x.snapshot.eliminationRounds=[0,0,0,0,0,0,2,2];x.snapshot.roundComplete=true;x.rooms.sync(x.code,x.a,x.snapshot);
+ Object.assign(x.snapshot,{round:4,eliminationRounds:[0,0,0,0,4,4,2,2]});
+ const v=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(v.balance,1300);assert.equal(v.positions[5].resolved,true);assert.equal(v.rankMinimum[5],5);assert.equal(v.rankMaximum[5],6);
+});

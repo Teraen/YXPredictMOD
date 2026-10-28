@@ -1,4 +1,5 @@
 import { quoteRates, sale, returnFor } from './odds.mjs';
+import { eliminationPlan, intervalReturn } from './eliminations.mjs';
 import { randomBytes, randomInt, createHash } from 'node:crypto';
 
 export class RoomError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
@@ -65,6 +66,7 @@ export class Rooms {
     requireThat(Array.isArray(s.ranks) && s.ranks.length === 8 && s.ranks.every(x => integer(x, 0, 8)), '名次无效');
     requireThat(s.gameRoomId === undefined || s.gameRoomId === '' || (typeof s.gameRoomId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(s.gameRoomId)), '游戏房间标识无效');
     requireThat(s.baseRates === undefined || (Array.isArray(s.baseRates) && s.baseRates.length === 64 && s.baseRates.every(rate => integer(rate,0,500000))), '基础倍率格式无效');
+    requireThat(s.eliminationRounds === undefined || (Array.isArray(s.eliminationRounds) && s.eliminationRounds.length === 8 && s.eliminationRounds.every(round => integer(round,0,s.round)) && typeof s.roundComplete === 'boolean'), '出局轮次格式无效');
     return s;
   }
   findByGame(key, nativeId) {
@@ -146,7 +148,15 @@ export class Rooms {
     r.round = s.round; r.closedThrough = Math.max(r.closedThrough, s.closedThrough); r.ended ||= s.ended;
     r.tradingClosed ||= r.round > 10 || r.closedThrough >= 10;
     r.open = !r.ended && !r.tradingClosed && s.open && r.round > r.closedThrough && (r.rules!==2 || r.ranks.filter(rank=>rank===0).length>=2);
-    for (let i = 0; i < 8; i++) {
+    if(r.rules===2 && (s.eliminationRounds || r.eliminationRounds)) {
+      if(s.eliminationRounds && !s.roundComplete && !s.ended) { r.open=false; if(before!==JSON.stringify([r.round,r.closedThrough,r.open,r.ended,r.settled,r.ranks]))r.version++;return; }
+      const rounds = r.players.map(p=>s.eliminationRounds?.[s.players.findIndex(q=>q.uid===p.uid)] ?? 0);
+      const dead = ranks.map((rank,i)=>!!rank || rounds[i]>0 || r.ranks[i]>0);
+      let plan;
+      try { plan=eliminationPlan(ranks,rounds,dead,r.ranks,r.rankMinimum??Array(8).fill(0),r.rankMaximum??Array(8).fill(0),r.eliminationRounds??Array(8).fill(0)); }
+      catch(error) { throw new RoomError(error.message); }
+      r.ranks=plan.ranks;r.rankMinimum=plan.minimum;r.rankMaximum=plan.maximum;r.eliminationRounds=plan.rounds;
+    } else for (let i = 0; i < 8; i++) {
       if (r.ranks[i] && ranks[i] && r.ranks[i] !== ranks[i]) throw new RoomError('确定名次冲突');
       if (ranks[i]) r.ranks[i] = ranks[i];
     }
@@ -228,7 +238,7 @@ export class Rooms {
       if(r.forfeited?.[key])continue;
       for(let i=0;i<8;i++){
         const p=ps[i];if(!p||p.resolved||!r.ranks[i])continue;
-        const payout=returnFor(p.claim,p.rank,r.ranks[i]);
+        const payout=r.rankMinimum?.[i]>0?intervalReturn(p.claim,p.rank,r.rankMinimum[i],r.rankMaximum[i]):returnFor(p.claim,p.rank,r.ranks[i]);
         requireThat(this.state.accounts[key].balance+payout<=1000000000000,'积分余额已达上限');
         this.state.accounts[key].balance+=payout;r.payouts[key]=(r.payouts[key]??0)+payout;p.payout=payout;p.resolved=true;
       }
@@ -256,7 +266,7 @@ export class Rooms {
     const r = this.room(code, key), totals = Array.from({length: 8}, () => Array(8).fill(0));
     for (const [member,ps] of Object.entries(r.positions)) if(r.rules!==2 || !r.forfeited?.[member]) for (let i = 0; i < 8; i++) if (ps[i]) totals[i][ps[i].rank - 1] += ps[i].stake;
     return { code, gameId: r.gameId, host: r.host === key, members: r.members.length, memberDetails: r.members.map(member => ({ id: createHash('sha256').update(member).digest('hex').slice(0,16), name: this.state.accounts[member].name, uid: this.state.accounts[member].uid ?? '' })), round: r.round, version: r.version,
-      reliefAmount: 50, reliefRequiresNoPendingBets: true, reliefCount: this.account(key).reliefCount ?? 0, allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r) && !r.forfeited?.[key], tradingClosed: !!r.tradingClosed || r.round > 10 || r.closedThrough >= 10, forfeited: !!r.forfeited?.[key], ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, totals,
+      reliefAmount: 50, reliefRequiresNoPendingBets: true, reliefCount: this.account(key).reliefCount ?? 0, allowMatch: r.allowMatch !== false, rules: r.rules ?? 1, baseRates: r.baseRates ?? [], quoteRates: r.quoteRates ?? [], factors: r.factors ?? [], quoteRound: r.quoteRound ?? r.round, open: this.isOpen(r) && !r.forfeited?.[key], tradingClosed: !!r.tradingClosed || r.round > 10 || r.closedThrough >= 10, forfeited: !!r.forfeited?.[key], ended: r.ended, settled: r.settled, players: r.players, ranks: r.ranks, rankMinimum: r.rankMinimum ?? r.ranks, rankMaximum: r.rankMaximum ?? r.ranks, totals,
       positions: r.positions[key] ?? Array(8).fill(null), balance: this.account(key).balance, payout: r.payouts[key] ?? 0 };
   }
 }

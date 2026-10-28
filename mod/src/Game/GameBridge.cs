@@ -17,7 +17,7 @@ namespace YxPrediction
         string _ratingMarketId;
         string _marketSummary;
         string _resultMatchId;
-        int _resultsThroughRound;
+        int _resultsThroughRound, _completeResultsThroughRound;
         float _nextPoll;
         int _eloRevision;
         public GameBridge(PredictionMod mod, ModContext ctx) { _mod = mod; _ctx = ctx; _elo = new EloClient(ctx); }
@@ -213,12 +213,19 @@ namespace YxPrediction
         {
             if (results == null || results.battleResults == null) return;
             for (int i = 0; i < results.battleResults.Count; i++) OnBattleResult(results.battleResults[i]);
+            BattleManager manager = BattleManager.Instance;
+            if (manager == null || SceneLoader.currentSceneName != "Battle") return;
+            string reason; MatchSnapshot snapshot = Read(manager.currentGameStatus, out reason);
+            if (snapshot == null) return;
+            for (int i = 0; i < results.battleResults.Count; i++)
+                if (Matches(results.battleResults[i], snapshot)) _completeResultsThroughRound = Math.Max(_completeResultsThroughRound, results.battleResults[i].round);
+            OnStatus(manager.currentGameStatus);
         }
 
         void TrackMatch(string id)
         {
             if (_resultMatchId == id) return;
-            _resultMatchId = id; _resultsThroughRound = 0;
+            _resultMatchId = id; _resultsThroughRound = 0; _completeResultsThroughRound = 0;
         }
 
         static bool Matches(Proto.BattleResult result, MatchSnapshot snapshot)
@@ -258,6 +265,7 @@ namespace YxPrediction
                             _resultsThroughRound = Math.Max(_resultsThroughRound, all.battleResults[i].round);
             }
             snapshot.ResultsThroughRound = _resultsThroughRound;
+            snapshot.RoundResultsComplete = _completeResultsThroughRound >= snapshot.Round;
             if (!snapshot.LiveObserver)
             {
                 _mod.AcceptSnapshot(snapshot, null); // 已有盘口的结束结果仍可结算。
@@ -296,7 +304,7 @@ namespace YxPrediction
             var players = new Player[8];
             var ranks = new int[8];
             var states = new PlayerState[8];
-            var swaps = new int[8];
+            var swaps = new int[8]; var eliminationRounds = new int[8];
             for (int i = 0; i < 8; i++)
             {
                 Proto.BattlePlayerData p = status.battlePlayerDatas[i];
@@ -308,6 +316,8 @@ namespace YxPrediction
                 // 存活玩家可能携带显示用名次，只把淘汰后的rank当作确定结果。
                 states[i] = GameRanks.ReadState(p.life, p.winRoundCount, p.loseRoundCount, p.rank);
                 swaps[i] = RemainingSwaps(status, p);
+                int completed = p.winRoundCount + p.loseRoundCount;
+                if (p.life <= 0 && completed > 0 && completed <= status.round) eliminationRounds[i] = completed;
             }
             string id;
             if (status.codeId > 0) id = "code:" + status.codeId.ToString(CultureInfo.InvariantCulture);
@@ -341,7 +351,7 @@ namespace YxPrediction
             {
                 Id = id, Round = status.round, LiveObserver = observer,
                 Ended = status.isEnded, FifthRoundEnded = status.round >= 6,
-                Players = players, Ranks = ranks, States = states, TradingOpen = trading, FocusedUid = FocusUid(manager, status), RemainingSwaps = swaps
+                Players = players, Ranks = ranks, States = states, TradingOpen = trading, FocusedUid = FocusUid(manager, status), RemainingSwaps = swaps, EliminationRounds = eliminationRounds
             };
         }
 

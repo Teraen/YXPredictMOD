@@ -203,7 +203,7 @@ namespace YxPrediction
                 string members = "成员：";
                 RoomState room = _mod.Online.State;
                 for (int i=0;i<room.MemberNames.Length;i++) members += (i>0?"、":"") + room.MemberNames[i] + "（" + (string.IsNullOrEmpty(room.MemberUids[i]) ? room.MemberIds[i] : room.MemberUids[i]) + "）";
-                _message.text = _feedback ?? _mod.Online.JoinNotice ?? ((room.AllowMatch ? "匹配开 · " : "匹配关 · ") + (room.Rules==2?"基础倍率×投注系数（下轮生效），差一名返25% · "+members:"旧资金池房间 · "+members));
+                _message.text = _feedback ?? _mod.Online.JoinNotice ?? ((room.AllowMatch ? "匹配开 · " : "匹配关 · ") + (room.Rules==2?"基础倍率×投注系数（下轮生效），同出区间全中，单出差一名返25% · "+members:"旧资金池房间 · "+members));
             }
             else _message.text = _feedback ?? blocked ?? (loading ? (_mod.QueryStatus ?? _mod.Message ?? "加载中…") : "");
             for (int i = 0; i < 8; i++) _rows[i].Refresh(r);
@@ -223,7 +223,7 @@ namespace YxPrediction
             var r = new RoomState(); r.Rules = 2; r.Forfeited = m.Abandoned; r.TradingClosed = m.Locked; r.Code = "单人"; r.GameId = m.Id; r.Round = m.HighestRound;
             r.BaseRates=m.BaseRates;r.QuoteRates=m.QuoteRates;for(int j=0;j<64;j++)r.Factors[j]=10000;
             r.Open = m.TradingWindowOpen; r.Settled = m.Settled; r.Balance = _mod.Book.Balance; r.Members = 1;
-            for (int i = 0; i < 8; i++) { r.Uids[i] = m.Players[i].Uid; r.Names[i] = m.Players[i].Name; r.Ranks[i] = m.KnownRanks[i]; r.MyRanks[i] = m.Positions[i].Rank; r.Stakes[i] = m.Positions[i].Claim;r.Claims[i]=m.Positions[i].Claim;r.FinalPayouts[i]=m.Positions[i].FinalPayout; }
+            for (int i = 0; i < 8; i++) { r.Uids[i] = m.Players[i].Uid; r.Names[i] = m.Players[i].Name; r.Ranks[i] = m.KnownRanks[i]; r.RankMinimum[i] = m.RankMinimum[i]; r.RankMaximum[i] = m.RankMaximum[i]; r.MyRanks[i] = m.Positions[i].Rank; r.Stakes[i] = m.Positions[i].Claim;r.Claims[i]=m.Positions[i].Claim;r.FinalPayouts[i]=m.Positions[i].FinalPayout; }
             Selections.Observe(r); return r;
         }
         public void Submit(int player, int rank, long amount, int action)
@@ -315,7 +315,7 @@ namespace YxPrediction
                 string rate=_chosen==0?"—":!_panel.HasCurrentRoom()||r.Rules==2?PredictionMod.Rate(r.QuoteRates[quoteAt]):selected>0?(total/(double)selected).ToString("0.00",CultureInfo.InvariantCulture)+"x":"暂无投入";
                 _oddsLabel.text=rate=="暂无投入"?"—":rate;
                 _holdingLabel.text=r.Forfeited && r.Ranks[_index]==0 ? "离场已放弃" : r.Stakes[_index]>0?"猜"+PredictionMod.N(r.MyRanks[_index])+"名 · 权益 "+PredictionMod.N(_panel.HasCurrentRoom()&&r.Rules==2?r.Claims[_index]:r.Stakes[_index])+"分":"未持仓";
-                _resultLabel.text=r.Forfeited && r.Ranks[_index]==0 ? "不退本金，不再返奖" : r.Ranks[_index]>0?"最终第"+PredictionMod.N(r.Ranks[_index])+"名 · 返还 "+PredictionMod.N(r.FinalPayouts[_index])+"分":_panel.HasCurrentRoom()&&r.Rules==2&&_chosen>0?"基础 "+PredictionMod.Rate(r.BaseRates[quoteAt])+" × "+(r.Factors[quoteAt]/10000.0).ToString("0.00",CultureInfo.InvariantCulture):"";
+                _resultLabel.text=r.Forfeited && r.Ranks[_index]==0 ? "不退本金，不再返奖" : r.Ranks[_index]>0?r.ResultPlace(_index)+" · 返还 "+PredictionMod.N(r.FinalPayouts[_index])+"分":_panel.HasCurrentRoom()&&r.Rules==2&&_chosen>0?"基础 "+PredictionMod.Rate(r.BaseRates[quoteAt])+" × "+(r.Factors[quoteAt]/10000.0).ToString("0.00",CultureInfo.InvariantCulture):"";
                 _half.SetActive(r.Stakes[_index]>0);_sell.SetActive(r.Stakes[_index]>0);
                 _buy.SetText(r.Stakes[_index] > 0 ? r.MyRanks[_index] == _chosen ? "增持" : "换预测" : "投入");
             }

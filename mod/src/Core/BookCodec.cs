@@ -89,6 +89,9 @@ namespace YxPrediction
                 positions.Add(row);
             }
             for (int i = 0; i < 64; i++) rates.Add(m.QuoteRates[i]);
+            var minimum = new List<object>(); var maximum = new List<object>(); var rounds = new List<object>();
+            for (int i = 0; i < 8; i++) { minimum.Add(m.RankMinimum[i]); maximum.Add(m.RankMaximum[i]); rounds.Add(m.EliminationRounds[i]); }
+            data["rankMinimum"] = minimum; data["rankMaximum"] = maximum; data["eliminationRounds"] = rounds;
             data["states"] = states; data["rates"] = rates; data["known"] = known; data["positions"] = positions;
             return data;
         }
@@ -106,6 +109,22 @@ namespace YxPrediction
                 if (rank > 0 && seen[rank]) throw new FormatException("确定名次重复");
                 if (rank > 0) seen[rank] = true;
                 market.KnownRanks[i] = rank;
+            }
+            if (data.ContainsKey("rankMinimum") || data.ContainsKey("rankMaximum") || data.ContainsKey("eliminationRounds"))
+            {
+                var minimum = Array(data,"rankMinimum",8,8); var maximum = Array(data,"rankMaximum",8,8); var rounds = Array(data,"eliminationRounds",8,8);
+                for (int i = 0; i < 8; i++)
+                {
+                    int low = ArrayNumber(minimum,i,0,8), high = ArrayNumber(maximum,i,0,8);
+                    market.RankMinimum[i] = low; market.RankMaximum[i] = high; market.EliminationRounds[i] = ArrayNumber(rounds,i,0,100000);
+                    if ((low == 0) != (high == 0) || low > high || (low > 0 && (market.KnownRanks[i] < low || market.KnownRanks[i] > high))) throw new FormatException("同出区间存档无效");
+                    if (low < high)
+                    {
+                        int members = 0;
+                        for (int j = 0; j < 8; j++) if (ArrayNumber(minimum,j,0,8) == low && ArrayNumber(maximum,j,0,8) == high && ArrayNumber(rounds,j,0,100000) == market.EliminationRounds[i]) members++;
+                        if (market.EliminationRounds[i] == 0 || members != high-low+1) throw new FormatException("同出分组存档无效");
+                    }
+                }
             }
             var states = Array(data, "states", market.QuoteRound == 0 ? 0 : 8, market.QuoteRound == 0 ? 0 : 8);
             if (states.Count == 8)
@@ -140,7 +159,7 @@ namespace YxPrediction
                 if (p.Cost > p.Invested || p.Invested > p.Actions * Odds.MaximumStake || p.Claim > p.Invested * 50
                     || p.CashReturned + p.Claim > p.Invested * 50 || (p.Claim == 0 && (p.Rank != 0 || p.Cost != 0))
                     || (p.Claim > 0 && p.Rank == 0) || p.Resolved != (market.KnownRanks[i] > 0)
-                    || p.FinalPayout != (p.Resolved ? p.ReturnFor(market.KnownRanks[i]) : 0)) throw new FormatException("持仓记录损坏");
+                    || p.FinalPayout != (p.Resolved ? market.ReturnFor(i, market.KnownRanks[i]) : 0)) throw new FormatException("持仓记录损坏");
                 paid += p.FinalPayout;
             }
             if (paid != market.TotalPayout) throw new FormatException("逐人结算总额损坏");
@@ -273,7 +292,7 @@ namespace YxPrediction
                         if (seen[rank]) throw new FormatException("最终名次重复");
                         seen[rank] = true;
                         market.FinalRanks[i] = rank;
-                        if (market.IsTrading && rank != market.KnownRanks[i]) throw new FormatException("最终名次与逐人结算不符");
+                        if (market.IsTrading && rank != market.KnownRanks[i] && (market.RankMinimum[i] == 0 || rank < market.RankMinimum[i] || rank > market.RankMaximum[i])) throw new FormatException("最终名次与逐人结算不符");
                         Ticket ticket = market.Tickets[i];
                         if (ticket != null) payout += ticket.ReturnFor(rank, market.RuleVersion);
                     }
