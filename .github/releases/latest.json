@@ -1,9 +1,9 @@
 {
-  "version": "0.7.13",
-  "tag": "v0.7.13",
-  "title": "v0.7.13 - 冠军预测、公开房间与马币榜",
-  "artifact": "dist/天机赌马-0.7.13.zip",
-  "sha256": "d19e8e5384f412b682246fe27f0430f24d88b7eaed1f2515ccb261bdc7dac0c1",
-  "notes": ".github/releases/v0.7.13.md",
-  "assetName": "tianji-duma-0.7.13.zip"
+  "version": "0.7.14",
+  "tag": "v0.7.14",
+  "title": "v0.7.14 - 默认保留角色头像",
+  "artifact": "dist/天机赌马-0.7.14.zip",
+  "sha256": "9723614af85b4419e71a85ec5e7654053173b9e9a852d4690c9d7316de2e819c",
+  "notes": ".github/releases/v0.7.14.md",
+  "assetName": "tianji-duma-0.7.14.zip"
 }

@@ -59,8 +59,8 @@ namespace YxPrediction
             _mod = mod; _ctx = ctx; _bridge = bridge; _ui = new UiKit(ctx);
             _enabled = ctx.Config.Bind("tianji", "enabled", true, "显示田忌赛马称号；按公开Elo分档，仅作趣味参考");
             _icons = ctx.Config.Bind("tianji", "icons", true, "允许圆形马图覆盖原头像；关闭后仅显示称号");
-            // 使用新配置键，旧alwaysCover设置不再影响默认行为；保留热键ID以沿用用户改键。
-            _iconsOnFocus = ctx.Config.Bind("tianji", "iconsOnFocus", false, "关闭：默认显示马图，查看或悬停时显示角色；开启：默认显示角色，查看或悬停时显示马图。Ctrl+Shift+H切换");
+            // 默认保留角色头像，查看或悬停时显示马图；已有显示偏好和热键改键继续沿用。
+            _iconsOnFocus = ctx.Config.Bind("tianji", "iconsOnFocus", true, "关闭：默认显示马图，查看或悬停时显示角色；开启：默认显示角色，查看或悬停时显示马图。Ctrl+Shift+H切换");
             ctx.Input.RegisterHotkey("horseAlwaysCover", "Ctrl+Shift+H", ToggleIconMode);
             ctx.Events.OnNetIn<Proto.MatchPlayerInfosResp>(OnScores);
         }

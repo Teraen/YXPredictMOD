@@ -4,13 +4,13 @@
     {
       "id": "local.yxp.predictionpoints",
       "name": "天机赌马",
-      "version": "0.7.13",
+      "version": "0.7.14",
       "author": "@TeraE / @Airexplosion",
-      "description": "【观战模式】只猜冠军，第二名返还锁定中奖额25%、第三名10%；第10回合起封盘，退出角色不能投注。支持公开房间列表、私密创建、随机匹配与命元走势。网页榜单可用攻略站YG登录，绑定马币账户后查看净收益和改名。\n\n【天梯/道心模式】显示Elo与趣味马匹称号；悬停或查看角色显示原头像。\n\n马币榜与每日签到：https://duma.kaigua.vip/（YG登录绑定后，每天可领取200马币）；Elo查询使用同服务器elo.kaigua.vip。",
+      "description": "【观战模式】只猜冠军，第二名返还锁定中奖额25%、第三名10%；第10回合起封盘，退出角色不能投注。支持公开房间列表、私密创建、随机匹配与命元走势。网页榜单可用攻略站YG登录，绑定马币账户后查看净收益和改名。\n\n【天梯/道心模式】显示Elo与趣味马匹称号；默认显示角色头像，悬停或查看角色时显示马图，Ctrl+Shift+H切换显示模式。\n\n马币榜与每日签到：https://duma.kaigua.vip/（YG登录绑定后，每天可领取200马币）；Elo查询使用同服务器elo.kaigua.vip。",
       "sdkVersion": ">=1.0.0 <2.0.0",
       "repo": "https://github.com/Teraen/YXPredictMOD",
-      "download": "https://github.com/Teraen/YXPredictMOD/releases/download/v0.7.13/tianji-duma-0.7.13.zip",
-      "sha256": "d19e8e5384f412b682246fe27f0430f24d88b7eaed1f2515ccb261bdc7dac0c1"
+      "download": "https://github.com/Teraen/YXPredictMOD/releases/download/v0.7.14/tianji-duma-0.7.14.zip",
+      "sha256": "9723614af85b4419e71a85ec5e7654053173b9e9a852d4690c9d7316de2e819c"
     }
   ]
 }
