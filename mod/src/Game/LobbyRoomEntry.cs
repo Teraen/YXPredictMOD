@@ -50,7 +50,9 @@ namespace YxPrediction
         {
             string roomId;
             Button native = SelectedButton(out roomId);
-            Visible = native != null;
+            var lobby = NativeRoomSpectate.IsLobby ? ILRPanelBase.FindILRPanel<LobbyPanel>() : null;
+            var panel = lobby == null ? null : lobby.FindILRSubPanel<XianFuLobbyPanel>();
+            Visible = native != null || (panel != null && !panel.hiding && panel.transform != null && panel.transform.gameObject.activeInHierarchy);
             if (_root != null) _root.SetActive(Visible);
             if (!Visible) return;
             if (_root == null)
@@ -61,6 +63,12 @@ namespace YxPrediction
             }
             var rect = _root.transform as RectTransform;
             var parent = rect.parent as RectTransform;
+            if (native == null)
+            {
+                rect.anchorMin = rect.anchorMax = new Vector2(1f, 1f); rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.anchoredPosition = new Vector2(-120f, -160f); _button.SetText("预测房间"); return;
+            }
+            _button.SetText("名次预测");
             var reference = native.transform as RectTransform;
             if (parent == null || reference == null) return;
             Vector3 center = parent.InverseTransformPoint(reference.TransformPoint(reference.rect.center));

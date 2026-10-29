@@ -15,7 +15,13 @@ namespace YxPrediction
         readonly ModContext _ctx;
         readonly NativeTheme _theme;
         readonly UiKit _ui;
-        GameObject _root, _menu, _joinForm, _menuChoices, _createForm;
+        GameObject _root, _menu, _joinForm, _menuChoices, _createForm, _listForm;
+        NativePanelButton _publicButton, _listPrev, _listNext;
+        TextMeshProUGUI _listPage;
+        bool _isPublic = true;
+        int _page;
+        float _nextListRefresh;
+        readonly BrowserRow[] _browserRows = new BrowserRow[6];
         NativePanelButton _allowMatchButton, _confirmCreate;
         bool _allowMatch = true;
         string _createTarget;
@@ -71,7 +77,7 @@ namespace YxPrediction
         }
         void BuildMenu()
         {
-            _menu = _ui.Panel("PredictionRoomMenu", new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(580f, 230f), NativeTheme.LacquerBlack);
+            _menu = _ui.Panel("PredictionRoomMenu", new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(580f, 310f), NativeTheme.LacquerBlack);
             if (_menu == null) return;
             _theme.ApplyWindowFrame(_menu.GetComponent<Image>());
             _theme.DecorateWindow(_menu, "名次预测");
@@ -85,6 +91,8 @@ namespace YxPrediction
             _menuJoin = _theme.CreateButtonTopLeft(_menuChoices.transform, "menuJoin", "加入", 24f, 0f, 164f, 60f, NativePanelButtonStyle.Primary, JoinCurrent, 24);
             _menuCreate = _theme.CreateButtonTopLeft(_menuChoices.transform, "menuCreate", "创建", 208f, 0f, 164f, 60f, NativePanelButtonStyle.Primary, Create, 24);
             _menuMatch = _theme.CreateButtonTopLeft(_menuChoices.transform, "menuMatch", "匹配", 392f, 0f, 164f, 60f, NativePanelButtonStyle.Primary, RandomJoin, 24);
+            _theme.CreateButtonTopLeft(_menuChoices.transform, "roomList", "公开房间列表", 24f, -74f, 532f, 48f, NativePanelButtonStyle.Secondary, ShowRooms, 22);
+            _theme.CreateButtonTopLeft(_menuChoices.transform, "webLink", "网页绑定 / 复制绑定码", 24f, -132f, 532f, 44f, NativePanelButtonStyle.Secondary, WebLink, 20);
             _joinForm = new GameObject("JoinForm", typeof(RectTransform));
             _joinForm.transform.SetParent(_menu.transform, false);
             NativeTheme.SetTopLeft(_joinForm.transform as RectTransform, 0f, -66f, 580f, 74f);
@@ -96,16 +104,51 @@ namespace YxPrediction
             _createForm.transform.SetParent(_menu.transform, false);
             NativeTheme.SetTopLeft(_createForm.transform as RectTransform, 0f, -66f, 580f, 74f);
             _allowMatchButton = _theme.CreateButtonTopLeft(_createForm.transform, "allowMatch", "匹配：开启", 24f, 0f, 176f, 54f, NativePanelButtonStyle.Secondary, ToggleMatching, 22);
+            _publicButton = _theme.CreateButtonTopLeft(_createForm.transform, "publicRoom", "公开：开启", 24f, -68f, 532f, 48f, NativePanelButtonStyle.Secondary, TogglePublic, 22);
             _confirmCreate = _theme.CreateButtonTopLeft(_createForm.transform, "confirmCreate", "创建并观战", 216f, 0f, 188f, 54f, NativePanelButtonStyle.Primary, ConfirmCreate, 22);
             _theme.CreateButtonTopLeft(_createForm.transform, "backCreate", "返回", 420f, 0f, 136f, 54f, NativePanelButtonStyle.Secondary, BackChoices, 22);
             _createForm.SetActive(false);
-            _menuMessage = _ui.Label(_menu.transform, "menuMessage", "", new Vector2(24f, -150f), new Vector2(532f, 62f), 18);
+            _menuMessage = _ui.Label(_menu.transform, "menuMessage", "", new Vector2(24f, -220f), new Vector2(532f, 66f), 18);
             _theme.ApplyTextStyle(_menuMessage, 18, false, TextAlignmentOptions.Left); _menuMessage.enableWordWrapping = true;
+            _listForm = new GameObject("PublicRooms", typeof(RectTransform)); _listForm.transform.SetParent(_menu.transform, false);
+            NativeTheme.SetTopLeft(_listForm.transform as RectTransform, 0f, -66f, 580f, 500f);
+            for (int i = 0; i < 6; i++) _browserRows[i] = new BrowserRow(this, i);
+            _listPrev = _theme.CreateButtonTopLeft(_listForm.transform,"previousPage","上一页",24f,-404f,114f,44f,NativePanelButtonStyle.Secondary,PreviousPage,20);
+            _listPage = _ui.Label(_listForm.transform,"page","",new Vector2(148f,-404f),new Vector2(160f,44f),18);
+            _listNext = _theme.CreateButtonTopLeft(_listForm.transform,"nextPage","下一页",318f,-404f,114f,44f,NativePanelButtonStyle.Secondary,NextPage,20);
+            _theme.CreateButtonTopLeft(_listForm.transform,"refreshRooms","刷新",442f,-404f,114f,44f,NativePanelButtonStyle.Secondary,RefreshRooms,20);
+            _theme.CreateButtonTopLeft(_listForm.transform,"backRooms","返回",24f,-458f,532f,44f,NativePanelButtonStyle.Secondary,BackChoices,20);
+            _listForm.SetActive(false);
+        }
+        void ShowRooms() { _connectionMenu = true; _menuTitle.text = "公开预测房间"; _menuChoices.SetActive(false); _joinForm.SetActive(false); _createForm.SetActive(false); _listForm.SetActive(true); _page = 0; RefreshRooms(); }
+        void RefreshRooms() { if (!_mod.Online.Busy) { _nextListRefresh = Time.unscaledTime + 5f; _mod.Online.FetchRooms(_page); } }
+        void WebLink() { _mod.Online.CreateWebCode(); }
+        void PreviousPage() { if (_page > 0 && !_mod.Online.Busy) { _page--; RefreshRooms(); } }
+        void NextPage() { RoomBrowser b = _mod.Online.Browser; if (b != null && (_page + 1) * 6 < b.Total && !_mod.Online.Busy) { _page++; RefreshRooms(); } }
+        sealed class BrowserRow
+        {
+            readonly RoomPanel _panel; readonly GameObject _root; readonly TextMeshProUGUI _text; readonly NativePanelButton _join;
+            string _code;
+            public BrowserRow(RoomPanel panel, int slot)
+            {
+                _panel = panel; _root = new GameObject("RoomRow" + PredictionMod.N(slot), typeof(RectTransform)); _root.transform.SetParent(panel._listForm.transform, false);
+                NativeTheme.SetTopLeft(_root.transform as RectTransform, 24f, -slot * 66f, 532f, 60f);
+                _text = panel._ui.Label(_root.transform,"description","",Vector2.zero,new Vector2(406f,60f),18);
+                panel._theme.ApplyTextStyle(_text,18,false,TextAlignmentOptions.Left); _text.enableWordWrapping = true;
+                _join = panel._theme.CreateButtonTopLeft(_root.transform,"join","加入",420f,-6f,112f,44f,NativePanelButtonStyle.Primary,Join,20);
+            }
+            public void Refresh(PublicRoom room, bool busy)
+            {
+                _root.SetActive(room != null); _code = room == null ? null : room.Code; if (room == null) return;
+                _text.text = room.HostName + " · " + room.Code + ((char)10).ToString() + "第" + PredictionMod.N(room.Round) + "回合 · " + PredictionMod.N(room.Members) + "/32人 · " + (room.Round >= 10 ? "已封盘" : room.Open ? "可投注" : "交易暂停");
+                _join.SetText(room.Available ? "加入" : "已满"); _join.SetInteractable(room.Available && !busy && NativeRoomSpectate.IsLobby);
+            }
+            void Join() { if (_code != null && !_panel._mod.Online.Busy && NativeRoomSpectate.IsLobby) _panel._mod.Online.Connect(_code, false); }
         }
         void ShowConnectionMenu() { if (_menu == null) BuildMenu(); _connectionMenu = true; if (_root != null) _root.SetActive(false); ShowJoin(); if (_menu != null) _menu.SetActive(true); }
         void JoinCurrent() { if (NativeRoomSpectate.IsLobby) _mod.Online.JoinSelected(); else ShowJoin(); }
-        void ShowJoin() { if (_menuTitle != null) _menuTitle.text = "加入房间"; if (_joinForm != null) _joinForm.SetActive(true); if (_createForm != null) _createForm.SetActive(false); if (_menuChoices != null) _menuChoices.SetActive(false); }
-        void BackChoices() { _connectionMenu = false; if (_menuTitle != null) _menuTitle.text = "名次预测"; if (_joinForm != null) _joinForm.SetActive(false); if (_createForm != null) _createForm.SetActive(false); if (_menuChoices != null) _menuChoices.SetActive(true); }
+        void ShowJoin() { if (_listForm != null) _listForm.SetActive(false); if (_menuTitle != null) _menuTitle.text = "加入房间"; if (_joinForm != null) _joinForm.SetActive(true); if (_createForm != null) _createForm.SetActive(false); if (_menuChoices != null) _menuChoices.SetActive(false); }
+        void BackChoices() { if (_listForm != null) _listForm.SetActive(false); if (_menuTitle != null) _menuTitle.text = "名次预测"; if (_joinForm != null) _joinForm.SetActive(false); if (_createForm != null) _createForm.SetActive(false); if (_menuChoices != null) _menuChoices.SetActive(true); }
         void Build()
         {
             _classic=new NativePredictionWindow(_ctx,_theme,"名次预测总览");
@@ -155,7 +198,8 @@ namespace YxPrediction
             _confirmCreate.SetText(NativeRoomSpectate.IsLobby ? "创建并观战" : "创建房间");
         }
         void ToggleMatching() { _createError = null; _allowMatch = !_allowMatch; _allowMatchButton.SetText(_allowMatch ? "匹配：开启" : "匹配：关闭"); }
-        void ConfirmCreate() { if (_mod.Online.Create(_allowMatch, _createTarget)) Close(); else _createError = _mod.Online.Message; }
+        void TogglePublic() { _createError = null; _isPublic = !_isPublic; _publicButton.SetText(_isPublic ? "公开：开启" : "公开：关闭"); _allowMatchButton.SetInteractable(_isPublic); _allowMatchButton.SetText(_isPublic && _allowMatch ? "匹配：开启" : "匹配：关闭"); }
+        void ConfirmCreate() { if (_mod.Online.Create(_allowMatch, _createTarget, _isPublic)) Close(); else _createError = _mod.Online.Message; }
         void Join() { _mod.Online.Connect(_code.Text, false); }
         void RandomJoin() { if (_mod.Online.Matching) _mod.Online.CancelMatch(); else _mod.Online.RandomJoin(); }
         void CancelMatch() { _mod.Online.CancelMatch(); }
@@ -170,12 +214,25 @@ namespace YxPrediction
             bool connected = PredictionVisibility.CanShow() && !_connectionMenu;
             GameObject shown = connected ? _root : _menu;
             if (shown == null) return;
+            bool browsing = _listForm != null && _listForm.activeSelf;
+            if (!connected) { var menuRect = _menu.transform as RectTransform; menuRect.sizeDelta = new Vector2(580f, browsing ? 660f : 370f); NativeTheme.SetTopLeft(_menuMessage.transform as RectTransform,24f,browsing ? -590f : -290f,532f,66f); }
             var rect = shown.transform as RectTransform; var parent = rect.parent as RectTransform;
             float scale = Mathf.Max(0.1f, Mathf.Min(1.2f, Mathf.Min((parent.rect.width - 32f) / rect.rect.width, (parent.rect.height - 180f) / rect.rect.height)));
             rect.localScale = new Vector3(scale,scale,1);
             rect.anchoredPosition = Vector2.zero;
             if (!connected)
             {
+                if (browsing)
+                {
+                    RoomBrowser browser = _mod.Online.Browser;
+                    bool currentPage = browser != null && browser.Page == _page;
+                    for (int i = 0; i < 6; i++) _browserRows[i].Refresh(currentPage && i < browser.Rooms.Count ? browser.Rooms[i] : null, _mod.Online.Busy);
+                    _listPage.text = "第" + PredictionMod.N(_page + 1) + "页 · " + PredictionMod.N(browser == null ? 0 : browser.Total) + "间";
+                    _listPrev.SetInteractable(_page > 0 && !_mod.Online.Busy); _listNext.SetInteractable(currentPage && (_page + 1) * 6 < browser.Total && !_mod.Online.Busy);
+                    _menuMessage.text = _mod.Online.Message;
+                    if (Time.unscaledTime >= _nextListRefresh && !_mod.Online.Busy && !_mod.Online.Matching) RefreshRooms();
+                    return;
+                }
                 if (lobby && Time.unscaledTime >= _nextDiscovery && !_mod.Online.Busy) { _nextDiscovery=Time.unscaledTime+3f; _mod.Online.DiscoverSelected(); }
                 string native; LobbyRoomEntry.SelectedButton(out native);
                 bool known = !lobby || (_mod.Online.DiscoveryReady && _mod.Online.DiscoveredNative == native);
@@ -185,7 +242,7 @@ namespace YxPrediction
                 bool settings = _createForm != null && _createForm.activeSelf;
                 if (_confirmCreate != null) _confirmCreate.SetInteractable(known && !exists && !_mod.Online.Busy && (!lobby || native == _createTarget));
                 if (_menuMessage != null) _menuMessage.text = settings
-                    ? (_createError ?? (lobby && native != _createTarget ? "所选对局已变更，请返回后重新创建" : exists ? "本局已有房间，请返回并加入" : _allowMatch ? "允许其他观众随机匹配进入；确认后直接观战。" : "仅通过本局加入或房间号进入，不参与随机匹配。"))
+                    ? (_createError ?? (lobby && native != _createTarget ? "所选对局已变更，请返回后重新创建" : exists ? "本局已有房间，请返回并加入" : !_isPublic ? "不出现在公开列表和随机匹配；仍可通过本局或房间号加入。" : _allowMatch ? "公开可见，允许随机匹配；确认后直接观战。" : "公开可见，可从列表加入；不参加随机匹配。"))
                     : !known ? "查询所选对局…" : exists ? "本局已有预测房间，点击加入即可观战" : _mod.Online.Message;
                 if (_menuMatch != null) _menuMatch.SetText(_mod.Online.Matching ? "取消" : "匹配");
                 return;
@@ -197,13 +254,13 @@ namespace YxPrediction
             if(_loading!=null){_loading.SetActive(loading&&!_minimized);if(loading){_loading.transform.SetAsLastSibling();_loadingLabel.text=(blocked==null?"数据加载中…":"暂时无法开盘")+((char)10).ToString()+(blocked??_mod.QueryStatus??_mod.Message??"等待八人观战数据");}}
             _status.text = r == null ? (blocked==null?"Elo / 对局数据加载中…":"开盘受阻，请查看下方原因")
                 : "房间 " + r.Code + " · " + PredictionMod.N(r.Members) + " 人 · 第 " + PredictionMod.N(r.Round) + " 轮 · "
-                + (r.Forfeited ? "离场已放弃" : r.Settled ? "已结算" : r.TradingClosed ? "已封盘" : r.Open ? "交易开放" : "交易暂停") + " · 余额 " + PredictionMod.N(r.Balance) + " 分" + (r.Host ? " · 你是房主" : "");
+                + (r.Forfeited ? "离场已放弃" : r.Settled ? "已结算" : r.TradingClosed ? "已封盘" : r.Open ? "交易开放" : "交易暂停") + " · 余额 " + PredictionMod.N(r.Balance) + " 马币" + (r.Host ? " · 你是房主" : "");
             if (HasCurrentRoom())
             {
                 string members = "成员：";
                 RoomState room = _mod.Online.State;
                 for (int i=0;i<room.MemberNames.Length;i++) members += (i>0?"、":"") + room.MemberNames[i] + "（" + (string.IsNullOrEmpty(room.MemberUids[i]) ? room.MemberIds[i] : room.MemberUids[i]) + "）";
-                _message.text = _feedback ?? _mod.Online.JoinNotice ?? ((room.AllowMatch ? "匹配开 · " : "匹配关 · ") + (room.Rules==2?"基础倍率×投注系数（下轮生效），同出区间全中，单出差一名返25% · "+members:"旧资金池房间 · "+members));
+                _message.text = _feedback ?? _mod.Online.JoinNotice ?? ((room.AllowMatch ? "匹配开 · " : "匹配关 · ") + (room.Rules>=2?"只猜冠军 · 第二25% / 第三10% · 同出取最高比例 · 第10回合封盘 · "+members:"旧资金池房间 · "+members));
             }
             else _message.text = _feedback ?? blocked ?? (loading ? (_mod.QueryStatus ?? _mod.Message ?? "加载中…") : "");
             for (int i = 0; i < 8; i++) _rows[i].Refresh(r);
@@ -220,7 +277,7 @@ namespace YxPrediction
         {
             if (HasCurrentRoom()) { Selections.Observe(_mod.Online.State); return _mod.Online.State; }
             Market m = _mod.Current; if (m == null) { Selections.Observe(null); return null; }
-            var r = new RoomState(); r.Rules = 2; r.Forfeited = m.Abandoned; r.TradingClosed = m.Locked; r.Code = "单人"; r.GameId = m.Id; r.Round = m.HighestRound;
+            var r = new RoomState(); r.Rules = m.ChampionOnly ? 3 : 2; r.Forfeited = m.Abandoned; r.TradingClosed = m.Locked; r.Code = "单人"; r.GameId = m.Id; r.Round = m.HighestRound;
             r.BaseRates=m.BaseRates;r.QuoteRates=m.QuoteRates;for(int j=0;j<64;j++)r.Factors[j]=10000;
             r.Open = m.TradingWindowOpen; r.Settled = m.Settled; r.Balance = _mod.Book.Balance; r.Members = 1;
             for (int i = 0; i < 8; i++) { r.Uids[i] = m.Players[i].Uid; r.Names[i] = m.Players[i].Name; r.Ranks[i] = m.KnownRanks[i]; r.RankMinimum[i] = m.RankMinimum[i]; r.RankMaximum[i] = m.RankMaximum[i]; r.MyRanks[i] = m.Positions[i].Rank; r.Stakes[i] = m.Positions[i].Claim;r.Claims[i]=m.Positions[i].Claim;r.FinalPayouts[i]=m.Positions[i].FinalPayout; }
@@ -228,6 +285,7 @@ namespace YxPrediction
         }
         public void Submit(int player, int rank, long amount, int action)
         {
+            if (action == 0) rank = 1;
             RoomState r = CurrentView(); if (r == null) return; _feedback = null;
             if (HasCurrentRoom())
             {
@@ -276,8 +334,7 @@ namespace YxPrediction
             void Buy()
             {
                 RoomState r = _panel.CurrentView(); if (r == null || _identity != r.Code + ":" + r.GameId + ":" + r.Uids[_index]) return;
-                _chosen = _panel.Selections.Selected(r.Uids[_index]);
-                if (_chosen < 1 || _chosen > 8) return;
+                _chosen = 1;
                 long amount;
                 if (!long.TryParse(_stake.Text, NumberStyles.None, CultureInfo.InvariantCulture, out amount) || amount < 1 || amount > 10000) { _panel._feedback = "投入须为1至10000整数"; return; }
                 string kind = r.Stakes[_index] > 0 && r.MyRanks[_index] != _chosen ? "switch" : "buy";
@@ -289,11 +346,11 @@ namespace YxPrediction
             {
                 string identity = r == null ? null : r.Code + ":" + r.GameId + ":" + r.Uids[_index];
                 if (_identity != identity) { _identity = identity; _stake.SetText("10"); }
-                _chosen = r == null ? 0 : _panel.Selections.Selected(r.Uids[_index]);
-                _rank.text = _chosen > 0 ? "第" + PredictionMod.N(_chosen) + "名" : "—";
+                _chosen = r == null ? 0 : r.Rules >= 3 ? 1 : r.MyRanks[_index];
+                _rank.text = r != null && r.Rules >= 3 ? "冠军" : _chosen > 0 ? "第"+PredictionMod.N(_chosen)+"名（旧）" : "旧盘口"; _btnMinus.SetActive(false); _btnPlus.SetActive(false);
                 bool valid = r != null && _panel._mod.Snapshot != null && r.GameId == _panel._mod.Snapshot.Id;
-                bool open = valid && r.Open && !r.Settled && (!_panel.HasCurrentRoom() || !_panel._mod.Online.Busy) && r.Ranks[_index] == 0;
-                _buy.SetInteractable(open && _chosen > 0); _half.SetInteractable(open && r.Stakes[_index] > 0); _sell.SetInteractable(open && r.Stakes[_index] > 0);
+                bool open = valid && BettingAccess.CanTrade(r,_panel._mod.Snapshot,_index) && (!_panel.HasCurrentRoom() || !_panel._mod.Online.Busy);
+                _buy.SetInteractable(open && r.Rules >= 3 && _chosen > 0); _half.SetInteractable(open && r.Stakes[_index] > 0); _sell.SetInteractable(open && r.Stakes[_index] > 0);
                 _playerName.text = r == null ? "—" : r.Names[_index];
                 if (r != null)
                 {
@@ -312,12 +369,12 @@ namespace YxPrediction
                 long total = 0; for (int j = 0; j < 8; j++) total += r.Pools[_index * 8 + j];
                 long selected = _chosen > 0 ? r.Pools[_index * 8 + _chosen - 1] : 0;
                 int quoteAt=_index*8+Math.Max(1,_chosen)-1;
-                string rate=_chosen==0?"—":!_panel.HasCurrentRoom()||r.Rules==2?PredictionMod.Rate(r.QuoteRates[quoteAt]):selected>0?(total/(double)selected).ToString("0.00",CultureInfo.InvariantCulture)+"x":"暂无投入";
+                string rate=_chosen==0?"—":!_panel.HasCurrentRoom()||r.Rules>=2?PredictionMod.Rate(r.QuoteRates[quoteAt]):selected>0?(total/(double)selected).ToString("0.00",CultureInfo.InvariantCulture)+"x":"暂无投入";
                 _oddsLabel.text=rate=="暂无投入"?"—":rate;
-                _holdingLabel.text=r.Forfeited && r.Ranks[_index]==0 ? "离场已放弃" : r.Stakes[_index]>0?"猜"+PredictionMod.N(r.MyRanks[_index])+"名 · 权益 "+PredictionMod.N(_panel.HasCurrentRoom()&&r.Rules==2?r.Claims[_index]:r.Stakes[_index])+"分":"未持仓";
-                _resultLabel.text=r.Forfeited && r.Ranks[_index]==0 ? "不退本金，不再返奖" : r.Ranks[_index]>0?r.ResultPlace(_index)+" · 返还 "+PredictionMod.N(r.FinalPayouts[_index])+"分":_panel.HasCurrentRoom()&&r.Rules==2&&_chosen>0?"基础 "+PredictionMod.Rate(r.BaseRates[quoteAt])+" × "+(r.Factors[quoteAt]/10000.0).ToString("0.00",CultureInfo.InvariantCulture):"";
+                _holdingLabel.text=r.Forfeited && r.Ranks[_index]==0 ? "离场已放弃" : r.Stakes[_index]>0?"猜"+PredictionMod.N(r.MyRanks[_index])+"名 · 权益 "+PredictionMod.N(_panel.HasCurrentRoom()&&r.Rules>=2?r.Claims[_index]:r.Stakes[_index])+"马币":"未持仓";
+                _resultLabel.text=r.Forfeited && r.Ranks[_index]==0 ? "不退本金，不再返奖" : r.Ranks[_index]>0?r.ResultPlace(_index)+" · 返还 "+PredictionMod.N(r.FinalPayouts[_index])+"马币":_panel.HasCurrentRoom()&&r.Rules>=2&&_chosen>0?"基础 "+PredictionMod.Rate(r.BaseRates[quoteAt])+" × "+(r.Factors[quoteAt]/10000.0).ToString("0.00",CultureInfo.InvariantCulture):"";
                 _half.SetActive(r.Stakes[_index]>0);_sell.SetActive(r.Stakes[_index]>0);
-                _buy.SetText(r.Stakes[_index] > 0 ? r.MyRanks[_index] == _chosen ? "增持" : "换预测" : "投入");
+                _buy.SetText(r.Stakes[_index] > 0 ? r.MyRanks[_index] == 1 ? "增持" : "换冠军" : "押冠军");
             }
         }
         public void KeepBarAbove(Transform bar) { if (_visible && _root != null && _root.activeInHierarchy && bar != null && _root.transform.GetSiblingIndex() == bar.parent.childCount - 1) bar.SetAsLastSibling(); }

@@ -44,7 +44,7 @@ internal static partial class Program
                 if (i == 4) Equal(Buy(book, s, 0, 1, 10), null);
                 if (i == 5)
                 {
-                    Equal(Buy(book, s, 1, 2, 90), null);
+                    Equal(Buy(book, s, 1, 1, 90), null);
                     Equal(Sell(book, s, 1, true), null);
                 }
             }
@@ -72,7 +72,7 @@ internal static partial class Program
         });
         Check("partially paid pending markets survive empty market reclamation", delegate
         {
-            var book = new PredictionBook(1000); MatchSnapshot s = CapacitySnapshot(0);
+            MatchSnapshot s = CapacitySnapshot(0); var book = TradeBook(s);
             book.Observe(s, Ratings(true)); Equal(Buy(book, s, 7, 8, 10), null);
             s.Round = 2; s.States[7] = new PlayerState(0, 0, 1, 8); book.Observe(s, null);
             Market paid = book.Find(s.Id); True(paid.TotalPayout > 0); True(!paid.Settled);
@@ -99,7 +99,7 @@ internal static partial class Program
                 for (int i = 0; i < 12; i++)
                 {
                     MatchSnapshot s = CapacitySnapshot(i); mod.AcceptSnapshot(s, Ratings(true));
-                    Equal(mod.PlaceBet(s.Players[0].Uid, 1, 1), "下注成功，已扣除 1 积分");
+                    Equal(mod.PlaceBet(s.Players[0].Uid, 1, 1), "下注成功，已扣除 1 马币");
                 }
                 string before = Json.Serialize(BookCodec.Write(mod.Book));
                 mod.SetQueryStatus("Elo查询完成，命中8");

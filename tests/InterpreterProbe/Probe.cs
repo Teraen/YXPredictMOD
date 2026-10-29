@@ -34,6 +34,8 @@ namespace YxPrediction
             if (book.Balance != expected || book.Find("probe").RuleVersion != 2) throw new Exception("Adjacent reward persistence failed");
             CapacityFlow(players, ratings);
             TradingFlow(players, ratings);
+            ChampionFlow(players, ratings);
+            ChampionGroupedFlow(players, ratings);
             LifeFlow(players, ratings);
             SharedTrendsFlow(players, ratings);
             RankSelectionFlow(players, ratings);
@@ -138,7 +140,7 @@ namespace YxPrediction
             {
                 var states = new PlayerState[8]; for (int i = 0; i < 8; i++) states[i] = new PlayerState(100,0,0,0);
                 var s = new MatchSnapshot { Id = "cohort", Round = 4, LiveObserver = true, TradingOpen = true, Players = players, States = states, EliminationRounds = new int[8] };
-                var b = new PredictionBook(1000); Market m = b.Observe(s,ratings); b.Buy(s,players[7].Uid,predicted,100,m.TradeVersion); long claim = m.Positions[7].Claim;
+                var b = HistoricalBook(s,ratings); Market m = b.Find(s.Id); b.Buy(s,players[7].Uid,predicted,100,m.TradeVersion); long claim = m.Positions[7].Claim;
                 s.Round=5;s.TradingOpen=false;s.RoundResultsComplete=true;s.EliminationRounds[6]=s.EliminationRounds[7]=5;
                 states[6]=states[7]=new PlayerState(0,2,3,0);b.Observe(s,null);
                 long expected=900+(predicted==6?0:claim);
@@ -153,10 +155,10 @@ namespace YxPrediction
         {
             var states = new PlayerState[8];
             for (int i = 0; i < 8; i++) states[i] = new PlayerState(100, 0, 0, 0);
-            var s = new MatchSnapshot { Id = "departure-close", Round = 10, LiveObserver = true, TradingOpen = true, Players = players, States = states };
+            var s = new MatchSnapshot { Id = "departure-close", Round = 9, LiveObserver = true, TradingOpen = true, Players = players, States = states };
             var b = new PredictionBook(1000); Market m = b.Observe(s, ratings);
             if (b.Buy(s, players[0].Uid, 1, 1000, m.TradeVersion) != null) throw new Exception("Round ten purchase failed");
-            s.ResultsThroughRound = 10; b.Observe(s, null);
+            s.Round = 10; s.ResultsThroughRound = 10; b.Observe(s, null);
             if (!m.Locked || m.TradingWindowOpen || b.Sell(s, players[0].Uid, false, m.TradeVersion) == null) throw new Exception("Round ten close failed");
             if (b.AbandonExcept(null) != 1 || !b.GrantBankruptcyRelief() || b.Balance != 50) throw new Exception("Departure relief failed");
             b = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b))));
@@ -170,8 +172,8 @@ namespace YxPrediction
         {
             var states = new PlayerState[8]; var ranks = new int[8];
             for (int i = 0; i < 8; i++) states[i] = GameRanks.ReadState(100, 0, 0, i);
-            var s = new MatchSnapshot { Id = "protocol-ranks", Round = 9, LiveObserver = true, Players = players, States = states, Ranks = ranks, TradingOpen = true };
-            var b = new PredictionBook(1000); Market m = b.Observe(s, ratings);
+            var s = new MatchSnapshot { Id = "protocol-ranks", Round = 7, LiveObserver = true, Players = players, States = states, Ranks = ranks, TradingOpen = true };
+            var b = HistoricalBook(s, ratings); Market m = b.Find(s.Id);
             if (b.Buy(s, players[6].Uid, 8, 40, m.TradeVersion) != null || b.Buy(s, players[4].Uid, 6, 10, m.TradeVersion) != null)
                 throw new Exception("Protocol rank fixture purchase failed");
             long expected = 950 + m.Positions[6].Claim + m.Positions[4].Claim / 4;
@@ -196,7 +198,7 @@ namespace YxPrediction
             var states = new PlayerState[8];
             for (int i = 0; i < 8; i++) states[i] = new PlayerState(100, 0, 0, 0);
             var s = new MatchSnapshot { Id = "rank-selection", Round = 1, LiveObserver = true, Players = players, States = states, TradingOpen = true };
-            var b = new PredictionBook(1000); Market m = b.Observe(s, ratings);
+            var b = HistoricalBook(s, ratings); Market m = b.Find(s.Id);
             var choices = new RankSelection(); choices.Observe(m);
             for (int i = 0; i < 8; i++) if (choices.Selected(i) != 0) throw new Exception("Unbought rank was preselected");
             choices.Step(0, false); if (choices.Selected(0) != 8) throw new Exception("Unselected reverse step failed");
@@ -257,12 +259,45 @@ namespace YxPrediction
             if (FocusSelection.Index(m, s) != 5 || m.Life[5].Points[1].Life != 100) throw new Exception("Focus mixed player data");
         }
 
+        static PredictionBook HistoricalBook(MatchSnapshot s, Rating[] ratings)
+        {
+            var b = new PredictionBook(1000);
+            b.Markets.Add(new Market(s.Id, s.Players, ratings, Odds.Rates(ratings, 3), 3)); b.Observe(s, null); return b;
+        }
+        static void ChampionGroupedFlow(Player[] players, Rating[] ratings)
+        {
+            var states=new PlayerState[8];for(int i=0;i<8;i++)states[i]=new PlayerState(100,0,0,0);
+            var s=new MatchSnapshot{Id="champion-group",Round=1,Players=players,States=states,LiveObserver=true,TradingOpen=true,EliminationRounds=new int[8]};
+            var book=new PredictionBook(1000);Market m=book.Observe(s,ratings);book.Buy(s,players[2].Uid,1,101,m.TradeVersion);long claim=m.Positions[2].Claim;
+            s.Round=9;s.TradingOpen=false;s.RoundResultsComplete=true;
+            for(int i=1;i<8;i++){states[i]=new PlayerState(0,0,0,i+1);s.EliminationRounds[i]=10-i;}
+            s.EliminationRounds[2]=s.EliminationRounds[1];states[1]=states[2]=new PlayerState(0,0,0,0);book.Observe(s,null);
+            if(m.Positions[2].FinalPayout!=claim/4 || book.Balance!=899+claim/4)throw new Exception("Champion cohort maximum failed");
+            book=BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(book))));s.Ended=true;s.Ranks=new int[]{1,3,2,4,5,6,7,8};book.Observe(s,null);
+            if(book.Balance!=899+claim/4 || !book.Find(s.Id).Settled)throw new Exception("Champion grouped final repeated or reset reward");
+        }
+
+        static void ChampionFlow(Player[] players, Rating[] ratings)
+        {
+            var states = new PlayerState[8]; for (int i = 0; i < 8; i++) states[i] = new PlayerState(100, 0, 0, 0);
+            var s = new MatchSnapshot { Id = "champion", Round = 9, LiveObserver = true, TradingOpen = true, Players = players, States = states };
+            var b = new PredictionBook(1000); Market m = b.Observe(s, ratings);
+            if (!m.ChampionOnly || b.Buy(s, players[0].Uid, 2, 10, m.TradeVersion) == null) throw new Exception("Champion policy failed");
+            for (int i = 0; i < 3; i++) if (b.Buy(s, players[i].Uid, 1, 10, m.TradeVersion) != null) throw new Exception("Champion purchase failed");
+            long expected = 970 + m.Positions[0].Claim + m.Positions[1].Claim / 4 + m.Positions[2].Claim / 10;
+            s.Round = 10; b.Observe(s, null); if (m.TradingWindowOpen) throw new Exception("Round ten reopened");
+            b = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b)))); s.Round = 9;
+            if (b.Buy(s, players[3].Uid, 1, 10, b.Find(s.Id).TradeVersion) == null) throw new Exception("Cutoff rewound");
+            s.Round = 15; s.Ended = true; s.Ranks = new int[] { 1, 2, 3, 4, 5, 6, 7, 8 }; b.Observe(s, null);
+            b = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(b)))); b.Observe(s, null);
+            if (b.Balance != expected || !b.Find(s.Id).Settled) throw new Exception("Champion awards or persistence failed");
+        }
         static void TradingFlow(Player[] players, Rating[] ratings)
         {
             var states = new PlayerState[8];
             for (int i = 0; i < 8; i++) states[i] = new PlayerState(100, 0, 0, 0);
             var snapshot = new MatchSnapshot { Id = "trading", Round = 2, LiveObserver = true, Players = players, States = states, TradingOpen = true };
-            var book = new PredictionBook(1000); Market m = book.Observe(snapshot, ratings);
+            var book = HistoricalBook(snapshot, ratings); Market m = book.Find(snapshot.Id);
             if (!m.IsTrading || !m.TradingWindowOpen) throw new Exception("Trading window not open");
             if (book.Buy(snapshot, players[0].Uid, 1, 100, m.TradeVersion) != null) throw new Exception("Initial buy failed");
             if (book.Buy(snapshot, players[7].Uid, 7, 10, m.TradeVersion) != null) throw new Exception("Near-rank buy failed");

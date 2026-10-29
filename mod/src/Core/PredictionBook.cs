@@ -8,6 +8,7 @@ namespace YxPrediction
         public const int TradingClosingRound = 10;
         public const long ReliefThreshold = 10;
         public const long ReliefAmount = 50;
+        public const int BettingCloseRound = 10;
         public long Balance;
         public readonly List<Market> Markets = new List<Market>();
         public int Revision;
@@ -162,10 +163,12 @@ namespace YxPrediction
             if (snapshot.Round != market.HighestRound) return "对局状态正在同步，请稍后重试";
             int index = market.FindPlayer(uid);
             if (index < 0) return "该玩家不在本局";
+            if (snapshot.States != null) for (int i = 0; i < snapshot.Players.Length; i++)
+                if (snapshot.Players[i].Uid == uid && (i >= snapshot.States.Length || snapshot.States[i] == null || snapshot.States[i].Life <= 0)) return "该玩家已淘汰或退出，不能下注";
             if (market.Tickets[index] != null) return "该玩家已下注，不能修改或重复下注";
             if (rank < 1 || rank > 8) return "请选择1至8名";
-            if (stake < 1 || stake > Odds.MaximumStake) return "本金须为1至10000的整数积分";
-            if (stake > Balance) return "积分不足";
+            if (stake < 1 || stake > Odds.MaximumStake) return "本金须为1至10000的整数马币";
+            if (stake > Balance) return "马币不足";
             int rate = Odds.EffectiveRate(market.BaseRates[index * 8 + rank - 1], snapshot.Round);
             var ticket = new Ticket(index, rank, snapshot.Round, stake, rate);
             Balance -= stake;
@@ -202,7 +205,7 @@ namespace YxPrediction
             if (snapshot.Round > market.HighestRound) { market.HighestRound = snapshot.Round; Revision++; }
             if (snapshot.ResultsThroughRound > market.ClosedThroughRound)
             { market.ClosedThroughRound = snapshot.ResultsThroughRound; TradingChange(market); }
-            if (!market.Locked && (market.HighestRound > TradingClosingRound || market.ClosedThroughRound >= TradingClosingRound))
+            if (!market.Locked && (market.HighestRound >= BettingCloseRound || market.ClosedThroughRound >= TradingClosingRound))
             { market.Locked = true; TradingChange(market); }
             int[] final = FinalRanks(market, snapshot);
             PlayerState[] states = null;
@@ -266,7 +269,7 @@ namespace YxPrediction
             }
             // 先验证整批，再逐人结算；部分淘汰可以提前入账，最终结果不重复派奖。
             long payment = 0;
-            for (int i = 0; i < 8; i++) if (known[i] > 0 && !market.Positions[i].Resolved) payment += plan == null ? market.ReturnFor(i, known[i]) : EliminationPlan.Return(market.Positions[i].Claim, market.Positions[i].Rank, plan.Minimum[i], plan.Maximum[i]);
+            for (int i = 0; i < 8; i++) if (known[i] > 0 && !market.Positions[i].Resolved) payment += plan == null ? market.ReturnFor(i, known[i]) : market.ChampionOnly ? EliminationPlan.ChampionReturn(market.Positions[i].Claim, plan.Minimum[i], plan.Maximum[i]) : EliminationPlan.Return(market.Positions[i].Claim, market.Positions[i].Rank, plan.Minimum[i], plan.Maximum[i]);
             if (payment > Odds.MaximumBalance - Balance) throw new InvalidOperationException("积分余额超过上限，保留待结算");
             if (plan != null)
                 for (int i = 0; i < 8; i++)
@@ -291,8 +294,8 @@ namespace YxPrediction
             }
             if (market.Locked)
             {
-                market.TradingWaitReason = market.HighestRound > TradingClosingRound || market.ClosedThroughRound >= TradingClosingRound
-                    ? "第10轮结束，已封盘；已有投注继续结算" : "已收到整局结束信号，等待最终名次";
+                market.TradingWaitReason = market.HighestRound >= BettingCloseRound || market.ClosedThroughRound >= TradingClosingRound
+                    ? "第10回合起已封盘；已有投注继续结算" : "已收到整局结束信号，等待最终名次";
                 return;
             }
             if (!snapshot.LiveObserver || !snapshot.TradingOpen || snapshot.Round <= market.ClosedThroughRound)
@@ -307,7 +310,7 @@ namespace YxPrediction
             if (changed)
             {
                 int[] rates;
-                try { rates = TradingOdds.Rates(market.Ratings, states, snapshot.Round); }
+                try { rates = TradingOdds.Rates(market.Ratings, states, snapshot.Round, market.ChampionOnly); }
                 catch (ArgumentException ex) { market.TradingWaitReason = ex.Message; return; }
                 market.QuoteStates = states; market.QuoteRates = rates; market.QuoteRound = snapshot.Round; TradingChange(market);
             }
@@ -326,6 +329,8 @@ namespace YxPrediction
             if (!market.TradingWindowOpen || snapshot.Round != market.QuoteRound) return market.TradingWaitReason ?? "当前交易暂停";
             index = market.FindPlayer(uid);
             if (index < 0) return "该玩家不在本局";
+            for (int i = 0; i < 8; i++) if (snapshot.Players[i].Uid == uid
+                && (snapshot.States == null || snapshot.States[i] == null || snapshot.States[i].Life <= 0)) return "该玩家已淘汰或退出，不能交易";
             if (market.KnownRanks[index] > 0 || market.Positions[index].Resolved) return "该玩家名次已确定，不能交易";
             if (expectedVersion != market.TradeVersion) return "报价或持仓已更新，请查看新报价后再操作";
             if (market.Positions[index].Actions >= Position.MaximumActions) return "该玩家本局操作次数已达512次";
@@ -340,7 +345,7 @@ namespace YxPrediction
             Position p = market.Positions[index];
             if (!TradingOdds.CanBuy(market, index, rank)) return "该名次已不可能达到，请选择仍可能的名次";
             if (p.Claim > 0 && p.Rank != rank) return "持仓名次不同，请使用换预测";
-            if (stake < 1 || stake > Odds.MaximumStake || stake > Balance) return "本金须为1至10000整数积分且不能超过余额";
+            if (stake < 1 || stake > Odds.MaximumStake || stake > Balance) return "本金须为1至10000整数马币且不能超过余额";
             long claim = stake * market.QuoteRates[index * 8 + rank - 1] / 10000;
             p.Rank = rank; p.Claim += claim; p.Cost += stake; p.Invested += stake; p.Actions++;
             Balance -= stake; TradingChange(market);
@@ -356,7 +361,7 @@ namespace YxPrediction
             long removed = half ? p.Claim / 2 : p.Claim;
             if (removed <= 0) return half && p.Claim > 0 ? "剩余权益不足减半，请使用清仓" : "当前没有持仓";
             long returned = TradingOdds.Sale(market, index, half);
-            if (returned > Odds.MaximumBalance - Balance) return "积分余额已达上限";
+            if (returned > Odds.MaximumBalance - Balance) return "马币余额已达上限";
             long releasedCost = p.Cost * removed / p.Claim;
             p.Claim -= removed; p.Cost -= releasedCost; p.CashReturned += returned; p.Actions++;
             if (p.Claim == 0) { p.Rank = 0; p.Cost = 0; }
@@ -375,7 +380,7 @@ namespace YxPrediction
             if (!TradingOdds.CanBuy(market, index, rank)) return "该名次已不可能达到";
             long returned = TradingOdds.Sale(market, index, false);
             if (stake < 1 || stake > Odds.MaximumStake || stake > Balance + returned) return "换预测本金无效或余额不足（含出售所得）";
-            if (returned - stake > Odds.MaximumBalance - Balance) return "积分余额已达上限";
+            if (returned - stake > Odds.MaximumBalance - Balance) return "马币余额已达上限";
             // 一次性完成，验证失败时不出售旧仓；新仓不继承旧名次的高赔率。
             long claim = stake * market.QuoteRates[index * 8 + rank - 1] / 10000;
             p.CashReturned += returned; p.Invested += stake; p.Cost = stake; p.Claim = claim; p.Rank = rank; p.Actions++;
@@ -401,7 +406,7 @@ namespace YxPrediction
                 Ticket ticket = market.Tickets[i];
                 if (ticket != null) total += ticket.ReturnFor(orderedRanks[i], market.RuleVersion);
             }
-            if (total > Odds.MaximumBalance - Balance) throw new InvalidOperationException("积分余额超过存档上限，结算已保留等待处理");
+            if (total > Odds.MaximumBalance - Balance) throw new InvalidOperationException("马币余额超过存档上限，结算已保留等待处理");
             Balance += total;
             market.TotalPayout = total;
             market.FinalRanks = orderedRanks;

@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { Rooms } from './rooms.mjs';
+import { Rooms as CurrentRooms } from './rooms.mjs';
+// Historical room contracts keep their original payout/rank engine for migration regression.
+class Rooms extends CurrentRooms { constructor(state, save, now) { super(state, save, now, {championOnly:false}); } }
 import { createHandler } from './server.mjs';
 function setup(save, rules = 1) {
   let time = 100000; const rooms = new Rooms(undefined, save, () => time);
@@ -33,7 +35,7 @@ test('all-in wagers block relief and duplicate purchases cannot manufacture poin
     assert.equal(result.reliefAmount,50);assert.equal(result.reliefRequiresNoPendingBets,true);
     assert.equal(result.balance,0);assert.equal(result.positions[0].stake,1000);assert.equal(saves,1);
     assert.equal(x.trade(x.a,0,1,1000,'buy','bankrupt-buy-001').balance,0);assert.equal(saves,1);
-    assert.throws(()=>x.trade(x.a,0,1,50,'buy','bankrupt-buy-002'),/积分不足/);
+    assert.throws(()=>x.trade(x.a,0,1,50,'buy','bankrupt-buy-002'),/马币不足/);
     assert.equal(x.rooms.view(x.code,x.a).positions[0].stake,1000);assert.equal(saves,1);
     const reloaded=new Rooms(structuredClone(x.rooms.state));
     assert.equal(reloaded.view(x.code,x.a).balance,0);
@@ -70,7 +72,7 @@ test('half and failed switch keep relief blocked; selling the last zero-value cl
   x.snapshot.round=2;x.snapshot.baseRates[0]=0;x.rooms.sync(x.code,x.a,x.snapshot);
   let result=x.trade(x.a,0,0,0,'half');assert.equal(result.balance,0);assert.ok(result.positions[0].claim>0);
   const before=structuredClone(x.rooms.state);
-  assert.throws(()=>x.trade(x.a,0,2,1,'switch'),/积分不足/);assert.deepEqual(x.rooms.state,before);
+  assert.throws(()=>x.trade(x.a,0,2,1,'switch'),/马币不足/);assert.deepEqual(x.rooms.state,before);
   saves=0;result=x.trade(x.a,0,0,0,'sell','last-zero-sale');
   assert.equal(result.balance,50);assert.equal(result.positions[0],null);assert.equal(result.payout,0);assert.equal(saves,1);
   assert.equal(x.trade(x.a,0,0,0,'sell','last-zero-sale').balance,50);assert.equal(saves,1);
@@ -208,8 +210,8 @@ test('disk restart preserves account and room, resets trading heartbeat, rejects
     let url=`http://127.0.0.1:${server.address().port}/v1/room`;
     const request=async(body,token)=>{const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+(token??'')},body:JSON.stringify(body)});return (await response.json()).data;};
     const user=await request({action:'register',name:'restart'});
-    const snapshot={id:'disk-game',round:1,closedThrough:0,open:true,ended:false,players:Array.from({length:8},(_,i)=>({uid:String(i),name:String(i)})),ranks:Array(8).fill(0)};
-    const room=await request({action:'create',snapshot},user.token);
+    const snapshot={id:'disk-game',round:1,closedThrough:0,open:true,ended:false,players:Array.from({length:8},(_,i)=>({uid:String(i),name:String(i)})),ranks:Array(8).fill(0),baseRates:Array(64).fill(40000)};
+    const room=await request({action:'create',protocol:3,snapshot},user.token);
     await request({action:'trade',code:room.code,kind:'buy',player:0,rank:1,stake:100,version:room.version,operation:'disk-trade-001'},user.token);
     await new Promise(resolve=>server.close(resolve));server=null;
     server=start({directory,port:0});await new Promise(resolve=>server.once('listening',resolve));url=`http://127.0.0.1:${server.address().port}/v1/room`;
@@ -344,10 +346,10 @@ test('forfeiture and relief roll back together on storage failure',()=>{
   assert.deepEqual(x.rooms.state,before);fail=false;
   assert.equal(x.rooms.abandon(x.code,x.a,x.snapshot.id,'departure-failure').balance,50);
 });
-test('round ten result or round eleven permanently closes all trades while keeping settlement alive',()=>{
+test('round ten start permanently closes all trades while keeping settlement alive',()=>{
   for(const nextRound of [false,true]){
-    const x=setup(undefined,2);x.snapshot.round=10;x.rooms.sync(x.code,x.a,x.snapshot);x.trade(x.a,0,1,100);
-    if(nextRound)x.snapshot.round=11;else x.snapshot.closedThrough=10;
+    const x=setup(undefined,2);x.snapshot.round=9;x.rooms.sync(x.code,x.a,x.snapshot);x.trade(x.a,0,1,100);
+    if(nextRound)x.snapshot.round=10;else x.snapshot.closedThrough=10;
     let view=x.rooms.sync(x.code,x.a,x.snapshot);assert.equal(view.tradingClosed,true);assert.equal(view.open,false);
     for(const kind of ['buy','half','sell','switch'])assert.throws(()=>x.trade(x.a,0,2,10,kind),/封盘/);
     const restored=new Rooms(structuredClone(x.rooms.state));

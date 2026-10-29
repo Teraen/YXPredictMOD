@@ -28,3 +28,5 @@ export function eliminationPlan(incoming,observed,dead,previous,previousMin,prev
  const known=p.ranks.filter(Boolean).length;if(p.ranks.some(rank=>rank>0&&rank<=8-known))throw Error('出局名次尚未对齐');return p;
 }
 export function intervalReturn(claim,predicted,minimum,maximum){if(!predicted||!minimum)return 0;if(minimum!==maximum)return predicted>=minimum&&predicted<=maximum?claim:0;return predicted===minimum?claim:Math.abs(predicted-minimum)===1?Math.floor(claim/4):0;}
+
+export function championReturn(claim,minimum,maximum){return minimum<1||maximum<minimum?0:minimum===1?claim:minimum===2?Math.floor(claim/4):minimum===3?Math.floor(claim/10):0;}

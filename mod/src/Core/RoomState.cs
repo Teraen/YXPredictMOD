@@ -8,6 +8,8 @@ namespace YxPrediction
     public sealed class RoomState
     {
         public bool AllowMatch;
+        public bool IsPublic;
+        public readonly bool[] Active = new bool[] { true, true, true, true, true, true, true, true };
         public int ReliefAmount;
         public long ReliefCount;
         public bool ReliefRequiresNoPendingBets;
@@ -31,7 +33,7 @@ namespace YxPrediction
             get
             {
                 if (Settled || Forfeited) return false;
-                for (int i = 0; i < 8; i++) if ((Rules != 2 || Ranks[i] == 0) && (Claims[i] > 0 || Stakes[i] > 0)) return true;
+                for (int i = 0; i < 8; i++) if ((Rules < 2 || Ranks[i] == 0) && (Claims[i] > 0 || Stakes[i] > 0)) return true;
                 return false;
             }
         }
@@ -41,16 +43,17 @@ namespace YxPrediction
             r.Code = Json.GetString(d, "code", ""); r.GameId = Json.GetString(d, "gameId", "");
             r.Host = Json.GetBool(d, "host", false); r.Open = Json.GetBool(d, "open", false); r.Settled = Json.GetBool(d, "settled", false);
             r.AllowMatch = Json.GetBool(d, "allowMatch", true);
+            r.IsPublic = Json.GetBool(d, "isPublic", r.AllowMatch);
             r.ReliefAmount = (int)Json.GetNumber(d, "reliefAmount", 0);
             r.ReliefCount = (long)Json.GetNumber(d, "reliefCount", 0);
             r.ReliefRequiresNoPendingBets = Json.GetBool(d, "reliefRequiresNoPendingBets", false);
             r.Version = (int)Json.GetNumber(d, "version", 0); r.Round = (int)Json.GetNumber(d, "round", 0); r.Members = (int)Json.GetNumber(d, "members", 0);
             r.Forfeited = Json.GetBool(d, "forfeited", false);
-            r.TradingClosed = Json.GetBool(d, "tradingClosed", false) || r.Round > PredictionBook.TradingClosingRound;
+            r.TradingClosed = Json.GetBool(d, "tradingClosed", false) || r.Round >= PredictionBook.BettingCloseRound;
             r.Open = r.Open && !r.Forfeited && !r.TradingClosed;
             r.Balance = (long)Json.GetNumber(d, "balance", 0); r.Payout = (long)Json.GetNumber(d, "payout", 0);
             r.Rules=(int)Json.GetNumber(d,"rules",1);
-            if(r.Rules==2){
+            if(r.Rules>=2){
                 var baseline=Json.GetArray(d,"baseRates");var quoted=Json.GetArray(d,"quoteRates");var factors=Json.GetArray(d,"factors");
                 if(baseline==null||quoted==null||factors==null||baseline.Count!=64||quoted.Count!=64||factors.Count!=64)throw new FormatException("房间倍率缺失");
                 for(int i=0;i<64;i++){r.BaseRates[i]=Convert.ToInt32(baseline[i],CultureInfo.InvariantCulture);r.QuoteRates[i]=Convert.ToInt32(quoted[i],CultureInfo.InvariantCulture);r.Factors[i]=Convert.ToInt32(factors[i],CultureInfo.InvariantCulture);}
@@ -63,6 +66,8 @@ namespace YxPrediction
                 for(int i=0;i<members.Count;i++) { var member=members[i] as Dictionary<string,object>; r.MemberIds[i]=Json.GetString(member,"id",""); r.MemberNames[i]=Json.GetString(member,"name",""); r.MemberUids[i]=Json.GetString(member,"uid",""); }
             }
             var players = d["players"] as List<object>; var ranks = d["ranks"] as List<object>;
+            var active = Json.GetArray(d, "active");
+            if (active != null && active.Count != 8) throw new FormatException("选手状态维度错误");
             var positions = d["positions"] as List<object>; var pools = d["totals"] as List<object>;
             if (players == null || players.Count != 8 || ranks == null || ranks.Count != 8 || positions == null || positions.Count != 8 || pools == null || pools.Count != 8) throw new FormatException("房间响应维度错误");
             for (int i = 0; i < 8; i++)
@@ -74,6 +79,8 @@ namespace YxPrediction
                 if ((minimum != null && minimum.Count != 8) || (maximum != null && maximum.Count != 8)) throw new FormatException("名次区间维度错误");
                 r.RankMinimum[i] = minimum == null ? r.Ranks[i] : Convert.ToInt32(minimum[i],CultureInfo.InvariantCulture);
                 r.RankMaximum[i] = maximum == null ? r.Ranks[i] : Convert.ToInt32(maximum[i],CultureInfo.InvariantCulture);
+                if (active != null) { if (!(active[i] is bool)) throw new FormatException("选手状态无效"); r.Active[i] = (bool)active[i]; }
+                if (r.Ranks[i] > 0) r.Active[i] = false;
                 var pos = positions[i] as Dictionary<string, object>;
                 if (pos != null) { r.MyRanks[i] = (int)Json.GetNumber(pos, "rank", 0); r.Stakes[i] = (long)Json.GetNumber(pos, "stake", 0); r.Claims[i]=(long)Json.GetNumber(pos,"claim",r.Stakes[i]);r.FinalPayouts[i]=(long)Json.GetNumber(pos,"payout",0); }
                 var totals = pools[i] as List<object>; if (totals == null || totals.Count != 8) throw new FormatException("资金池维度错误");

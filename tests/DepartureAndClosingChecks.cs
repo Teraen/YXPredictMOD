@@ -51,12 +51,12 @@ internal static partial class Program
                 True(b.GrantBankruptcyRelief());Equal(b.Balance,50L);s.Ended=true;s.Ranks=new[]{1,2,3,4,5,6,7,8};b.Observe(s,null);Equal(b.Balance,50L);
             }
         });
-        Check("round ten remains open until its result, then every trading action stays closed across reload and rewind", delegate
+        Check("round ten starts permanently closed, then every trading action stays closed across reload and rewind", delegate
         {
             foreach(bool nextRound in new[]{false,true})
             {
-                var s=Snapshot(10);var b=TradeBook(s);Equal(Buy(b,s,0,1,100),null);
-                if(nextRound)s.Round=11;else s.ResultsThroughRound=10;
+                var s=Snapshot(9);var b=TradeBook(s);Equal(Buy(b,s,0,1,100),null);
+                if(nextRound)s.Round=10;else s.ResultsThroughRound=10;
                 b.Observe(s,null);True(b.Find(s.Id).Locked&&!b.Find(s.Id).TradingWindowOpen);
                 True(Buy(b,s,0,1,10)!=null);True(Sell(b,s,0,true)!=null);True(Sell(b,s,0,false)!=null);True(Switch(b,s,0,2,10)!=null);Equal(b.Balance,900L);
                 b=Reload(b);s.Round=10;s.ResultsThroughRound=0;b.Observe(s,null);True(!b.Find(s.Id).TradingWindowOpen);True(Buy(b,s,1,2,10)!=null);

@@ -45,7 +45,7 @@ namespace YxPrediction
             if (_root == null) return;
             _root.SetActive(_notice.Visible);
             if (!_notice.Visible) return;
-            _message.text = "已发放破产救济金 " + PredictionMod.N(_notice.Amount) + " 积分";
+            _message.text = "已发放破产救济金 " + PredictionMod.N(_notice.Amount) + " 马币";
             var rect = _root.transform as RectTransform;
             var parent = rect.parent as RectTransform;
             float scale = Mathf.Max(0.1f, Mathf.Min(1f, Mathf.Min((parent.rect.width - 32f) / 520f, (parent.rect.height - 32f) / 200f)));

@@ -33,10 +33,12 @@ namespace YxPrediction
         public long FinalPayout;
         public int Actions;
         public bool Resolved;
+        public bool ChampionOnly;
         public long ReturnFor(int finalRank)
         {
             int difference = Math.Abs(Rank - finalRank);
             if (Rank == 0) return 0;
+            if (ChampionOnly) return finalRank == 1 ? Claim : finalRank == 2 ? Claim / 4 : finalRank == 3 ? Claim / 10 : 0;
             return difference == 0 ? Claim : (difference == 1 ? Claim / 4 : 0);
         }
         public long NetResult { get { return CashReturned + FinalPayout - Invested; } }
@@ -103,15 +105,15 @@ namespace YxPrediction
             return result;
         }
 
-        public static int[] Rates(Rating[] ratings, PlayerState[] states, int round)
+        public static int[] Rates(Rating[] ratings, PlayerState[] states, int round, bool championOnly = false)
         {
             double[] probabilities = Probabilities(ratings, states);
             var rates = new int[64];
             for (int i = 0; i < 8; i++) for (int r = 0; r < 8; r++)
             {
                 double q = probabilities[i * 8 + r];
-                if (r > 0) q += probabilities[i * 8 + r - 1] * 0.25;
-                if (r < 7) q += probabilities[i * 8 + r + 1] * 0.25;
+                if (championOnly && r == 0) q = probabilities[i * 8] + probabilities[i * 8 + 1] * 0.25 + probabilities[i * 8 + 2] * 0.10;
+                else { if (r > 0) q += probabilities[i * 8 + r - 1] * 0.25; if (r < 7) q += probabilities[i * 8 + r + 1] * 0.25; }
                 if (q <= 0) continue;
                 int basis = (int)Math.Floor(Math.Max(1.01, Math.Min(50, Odds.ReturnRate / q)) * 10000 + 0.000001);
                 rates[i * 8 + r] = Odds.EffectiveRate(basis, Math.Max(1, Math.Min(5, round)));
@@ -122,6 +124,7 @@ namespace YxPrediction
         public static bool CanBuy(Market market, int player, int rank)
         {
             if (market.QuoteStates == null || player < 0 || player > 7 || rank < 1 || rank > 8 || market.KnownRanks[player] > 0 || market.QuoteStates[player].Life <= 0) return false;
+            if (market.ChampionOnly && rank != 1) return false;
             int alive = 0;
             for (int i = 0; i < 8; i++) if (market.QuoteStates[i].Life > 0) alive++;
             return alive >= 2 && rank <= alive && market.QuoteRates[player * 8 + rank - 1] > 0;

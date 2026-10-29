@@ -33,7 +33,7 @@ internal static partial class Program
         });
         Check("reported eighth-place holding settles all 388 locked points with four eliminated players", delegate
         {
-            MatchSnapshot s = Snapshot(9); PredictionBook b = TradeBook(s); Buy(b, s, 6, 8, 40);
+            MatchSnapshot s = Snapshot(7); PredictionBook b = TradeBook(s); Buy(b, s, 6, 8, 40);
             // 反馈截图中的已保存持仓：成本40，分次买入后锁定正中返还388，不使用当前10分预览重算。
             Dictionary<string, object> data = BookCodec.Write(b);
             var p = (Dictionary<string, object>)Json.GetArray(TradingRow(data), "positions")[6]; p["claim"] = 388;
@@ -49,7 +49,7 @@ internal static partial class Program
         });
         Check("an old blocked pending save recovers on fresh normalized status without duplicate awards", delegate
         {
-            MatchSnapshot s = Snapshot(9); PredictionBook b = TradeBook(s); Buy(b, s, 6, 8, 40); Buy(b, s, 4, 6, 10);
+            MatchSnapshot s = Snapshot(7); PredictionBook b = TradeBook(s); Buy(b, s, 6, 8, 40); Buy(b, s, 4, 6, 10);
             Market m = b.Find(s.Id); long exact = m.Positions[6].Claim, adjacent = m.Positions[4].Claim / 4;
             int[] life = new int[] { -18, 48, 0, 29, -12, 74, -19, 66 };
             int[] raw = new int[] { 4, 2, 5, 3, 6, 0, 7, 1 }; s.Round = 15;

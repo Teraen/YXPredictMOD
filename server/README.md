@@ -1,3 +1,7 @@
+> 0.7.13整合规则：第二/第三同出均返25%，第三/第四同出均返10%，同出取最高比例；第10回合开始封盘；离场自动放弃未结算权益，不退本金、不再领奖。保留已支付金额，排行榜不再将已放弃本金计入持仓。部署需要完整server目录（含eliminations.mjs）和兼容代理。以下旧版本说明以本段为准。
+
+> 当前0.7.12已改为马币、独立赌马域名和全部账户上榜，并新增每日签到；详见[迁移说明](../docs/duma-migration-checkin.md)。下文为0.7.11接入方式或历史规则说明。
+
 # Independent free-points room server
 
 Node 22+; no third-party dependencies. Start with `node server/server.mjs` from the repository root, or run `node --test server/rooms.test.mjs` for tests.
@@ -49,6 +53,12 @@ Account access applies the policy, including legacy low-balance accounts. During
 ## 0.7.10 grant notification receipts
 
 Each successful grant increments the account's durable `reliefCount`; room views include it, defaulting to zero for legacy accounts. The counter and balance share the same commit and roll back together. Polls, duplicate operation IDs and process restarts do not increment it. The client stores its acknowledged count per service/identity and displays only unseen actual grants. This enables a dismissible notification that automatically closes after three seconds, without a permanent footer rule. Deploy this version of rooms.mjs to supply online grant receipts; old servers cannot provide accurate grant-only notifications. No public service deployment was performed.
+# Current champion rooms and web dashboard (0.7.11 candidate)
+
+See [current rules and verification](../docs/champion-rooms-web.md) and [guide login adapter](../integration/README.md). New rooms accept champion predictions only, pay 100/25/10% of locked claims for first/second/third, close all trading at round 10, and reject exited players. Legacy holdings retain their promises and do not accept new buys. Public listing is independent of random matching; private creation disables both discovery methods.
+
+Deploy `web.mjs` and the entire `web/` folder alongside the room service. `YX_PREDICTION_BRIDGE_KEY` is a dedicated random 32-byte hex secret shared with the existing guide auth server; never commit it. The public board is accessible without login; account binding/profile changes use short guide identity proofs plus a one-time MOD possession code. See integration instructions before enabling it. The historical sections below describe previous room protocols, including the old pool calculation; they do not define the current champion rules.
+
 
 ## 0.7.11 departure and round-ten close
 

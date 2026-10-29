@@ -18,7 +18,7 @@ try {
     Invoke-Dotnet run --project tests/PredictionChecks.csproj --no-build -- --rule-parity .cache/single-player-parity.json
     $parityHash = (Get-FileHash '.cache/single-player-parity.json').Hash
     if ($parityHash -ne (Get-FileHash 'server/fixtures/single-player-parity.json').Hash) { throw '单人规则对照数据发生变化，请重新生成并审核服务端对照测试。' }
-    & node --test server/rooms.test.mjs server/rules.test.mjs
+    & node --test server/rooms.test.mjs server/rules.test.mjs server/champion.test.mjs server/web.test.mjs server/auth.test.mjs
     if ($LASTEXITCODE -ne 0) { throw '联机规则对照失败。' }
     Invoke-Dotnet run --project tests/GameEntryChecks/GameEntryChecks.csproj
     Invoke-Dotnet run --project tests/HorseHoverChecks/HorseHoverChecks.csproj

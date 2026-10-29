@@ -1,0 +1,26 @@
+[Unit]
+Description=Tianji Duma rooms and leaderboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yx-prediction
+Group=yx-prediction
+EnvironmentFile=/etc/yx-prediction.env
+WorkingDirectory=/opt/yx-prediction/current
+# Preserve the entry path when current is an atomic release symlink.
+ExecStart=/opt/yx-prediction/runtime/node-v22.23.4-linux-x64/bin/node --preserve-symlinks-main /opt/yx-prediction/current/server.mjs
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/yx-prediction
+UMask=0077
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

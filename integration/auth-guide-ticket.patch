@@ -1,0 +1,16 @@
+diff --git a/apps/auth-server/src/guides/routes.ts b/apps/auth-server/src/guides/routes.ts
+index cbb9a6b..191f6b2 100644
+--- a/apps/auth-server/src/guides/routes.ts
++++ b/apps/auth-server/src/guides/routes.ts
+@@ -6,0 +7 @@ import { GUIDE_I18N_JS } from './i18n.js';
++import { createHmac } from 'node:crypto';
+@@ -65,0 +67,9 @@ export function registerGuideRoutes(app: FastifyInstance, service: GuideService)
++    scope.post('/v1/guides/prediction-ticket', async req => {
++      const key = process.env.YX_PREDICTION_BRIDGE_KEY ?? '';
++      if (!/^[a-f0-9]{64}$/i.test(key)) throw new GuideError(503, '赌马网页登录尚未开启');
++      const r = service.session(token(req));
++      const subject = createHmac('sha256', Buffer.from(key, 'hex')).update('prediction-web:' + r.uidHash).digest('hex');
++      const payload = Buffer.from(JSON.stringify({ subject, name: r.characterName, expiresAt: Date.now() + 60_000 })).toString('base64url');
++      const signature = createHmac('sha256', Buffer.from(key, 'hex')).update(payload).digest('base64url');
++      return { ticket: payload + '.' + signature };
++    });

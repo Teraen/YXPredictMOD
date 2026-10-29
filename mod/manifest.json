@@ -1,9 +1,9 @@
 {
   "id": "local.yxp.predictionpoints",
   "name": "天机赌马",
-  "version": "0.7.12",
+  "version": "0.7.13",
   "author": "@TeraE / @Airexplosion",
-  "description": "【观战模式】支持八人名次预测与积分下注，可增持、减半、清仓或更换预测；查看命元及命元占比走势，也可创建、加入或随机匹配多人竞猜房间。\n\n【天梯/道心模式】显示玩家Elo分数、趣味马匹称号与圆形马图；鼠标悬停或查看角色时显示原头像，可用快捷键切换马图显示模式。",
+  "description": "【观战模式】只猜冠军，第二名返还锁定中奖额25%、第三名10%；第10回合起封盘，退出角色不能投注。支持公开房间列表、私密创建、随机匹配与命元走势。网页榜单可用攻略站YG登录，绑定马币账户后查看净收益和改名。\n\n【天梯/道心模式】显示Elo与趣味马匹称号；悬停或查看角色显示原头像。\n\n马币榜与每日签到：https://duma.kaigua.vip/（YG登录绑定后，每天可领取200马币）；Elo查询使用同服务器elo.kaigua.vip。",
   "sdkVersion": ">=1.0.0 <2.0.0",
   "entry": "plugins/PredictionPoints.dll",
   "entryType": "YxPrediction.PredictionMod",

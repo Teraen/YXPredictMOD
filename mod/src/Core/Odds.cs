@@ -13,11 +13,12 @@ namespace YxPrediction
         public const int ExactOnlyRuleVersion = 1;
         public const int AdjacentRuleVersion = 2;
         public const int TradingRuleVersion = 3;
-        public const int CurrentRuleVersion = TradingRuleVersion;
+        public const int ChampionRuleVersion = 4;
+        public const int CurrentRuleVersion = ChampionRuleVersion;
 
         public static bool SupportsRule(int version)
         {
-            return version >= ExactOnlyRuleVersion && version <= TradingRuleVersion;
+            return version >= ExactOnlyRuleVersion && version <= ChampionRuleVersion;
         }
 
         // 子集动态规划：到达某个已排名玩家集合的概率，再分配下一名。

@@ -93,13 +93,15 @@ namespace YxPrediction
         public readonly int[] BaseRates;
         public readonly int RuleVersion;
         public bool HasAdjacentReward { get { return RuleVersion >= Odds.AdjacentRuleVersion; } }
-        public bool IsTrading { get { return RuleVersion == Odds.TradingRuleVersion; } }
+        public bool IsTrading { get { return RuleVersion >= Odds.TradingRuleVersion; } }
+        public bool ChampionOnly { get { return RuleVersion >= Odds.ChampionRuleVersion; } }
         public readonly Ticket[] Tickets = new Ticket[8];
         public readonly Position[] Positions = new Position[8];
         public readonly int[] KnownRanks = new int[8];
         public readonly int[] RankMinimum = new int[8], RankMaximum = new int[8], EliminationRounds = new int[8];
         public long ReturnFor(int player, int rank)
         {
+            if (ChampionOnly) return RankMinimum[player] > 0 ? EliminationPlan.ChampionReturn(Positions[player].Claim, RankMinimum[player], RankMaximum[player]) : Positions[player].ReturnFor(rank);
             return RankMinimum[player] > 0 ? EliminationPlan.Return(Positions[player].Claim, Positions[player].Rank, RankMinimum[player], RankMaximum[player])
                 : Positions[player].ReturnFor(rank);
         }
@@ -130,6 +132,7 @@ namespace YxPrediction
             Ratings = new Rating[8];
             BaseRates = new int[64];
             for (int i = 0; i < 8; i++) { Players[i] = players[i]; Ratings[i] = ratings[i]; Positions[i] = new Position(); Life[i] = new LifeHistory(); Swaps[i] = new SwapHistory(); }
+            for (int i = 0; i < 8; i++) Positions[i].ChampionOnly = ChampionOnly;
             for (int i = 0; i < 64; i++) BaseRates[i] = rates[i];
         }
 

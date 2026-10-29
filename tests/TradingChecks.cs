@@ -7,7 +7,7 @@ using YxPrediction;
 internal static partial class Program
 {
     static PredictionBook TradeBook(MatchSnapshot s, long balance = 1000)
-    { var b = new PredictionBook(balance); b.Observe(s, Ratings(false)); return b; }
+    { return FixedBook(s, Ratings(false), Odds.TradingRuleVersion, balance); }
     static string Buy(PredictionBook b, MatchSnapshot s, int player, int rank, long stake)
     { return b.Buy(s, "player" + player, rank, stake, b.Find(s.Id).TradeVersion); }
     static string Sell(PredictionBook b, MatchSnapshot s, int player, bool half)

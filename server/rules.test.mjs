@@ -1,7 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {Rooms} from './rooms.mjs';
+import {Rooms as CurrentRooms} from './rooms.mjs';
+class Rooms extends CurrentRooms { constructor(state, save, now) { super(state, save, now, {championOnly:false}); } }
 import {wagerFactorBps,returnFor,sale} from './odds.mjs';
 const cases=JSON.parse(fs.readFileSync(new URL('./fixtures/single-player-parity.json',import.meta.url),'utf8'));
 for(let n=0;n<cases.length;n++)test('C# single-player oracle parity scenario '+n,()=>{

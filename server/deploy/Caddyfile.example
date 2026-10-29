@@ -1,0 +1,17 @@
+# Merge these blocks with the existing server configuration; do not replace other sites.
+elo.kaigua.vip {
+    root * /var/www/yxp
+    encode zstd gzip
+    @data path /data/*
+    header @data Cache-Control "public, max-age=300"
+    @vendor path /vendor/*
+    header @vendor Cache-Control "public, max-age=86400"
+    file_server
+}
+
+duma.kaigua.vip {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8123 {
+        header_up X-Real-IP {remote_host}
+    }
+}

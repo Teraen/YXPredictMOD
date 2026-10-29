@@ -75,6 +75,13 @@ namespace YxPrediction
             for (int i = 0; i < 8; i++) if (p.Ranks[i] > 0 && p.Ranks[i] <= 8 - known) throw new ArgumentException("出局名次尚未对齐");
             return p;
         }
+        public static long ChampionReturn(long claim, int minimum, int maximum)
+        {
+            if (minimum < 1 || maximum < minimum) return 0;
+            if (minimum == 1) return claim;
+            if (minimum == 2) return claim / 4;
+            return minimum == 3 ? claim / 10 : 0;
+        }
         public static long Return(long claim, int predicted, int minimum, int maximum)
         {
             if (predicted == 0 || minimum == 0) return 0;

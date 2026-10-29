@@ -48,6 +48,7 @@
     <ItemGroup><Compile Include="$(IntermediateOutputPath)HorseImageData.g.cs" /></ItemGroup>
   </Target>
   <Target Name="RequireSdk" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(YxHasGameRefs)' == 'true' And !Exists('$(YxRefs)UnityEngine.IMGUIModule.dll')" Text="需要原生剪贴板引用，请运行 scripts/prepare-game.ps1。" />
     <Error Condition="!Exists('$(YxSdkDir)net40\Yx.ModSdk.Core.dll')" Text="先运行 scripts/restore-sdk.ps1 恢复固定版本 SDK。" />
     <Error Condition="'$(YxHasGameRefs)' == 'true' And !Exists('$(YxRefs)UnityEngine.UnityWebRequestModule.dll')" Text="需要 UnityWebRequest 引用，请运行 scripts/prepare-game.ps1。" />
     <Error Condition="'$(YxHasGameRefs)' == 'true' And !Exists('$(YxRefs)LucidSight.Runtime.ColyseusSDK.dll')" Text="需要当前游戏ColyseusSDK引用，请运行 scripts/prepare-game.ps1。" />

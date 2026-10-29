@@ -37,10 +37,10 @@ namespace YxPrediction
             int index = -1; if (r != null) for(int i=0;i<8;i++) if(r.Uids[i]==focus) index=i;
             if(index<0) { _root.SetActive(false); return; }
             if (_uid != focus || _game != r.GameId || _room != r.Code) { _uid=focus;_game=r.GameId;_room=r.Code;_index=index;_stake.SetText("10"); }
-            _selected = _mod.OnlinePanel.Selections.Selected(focus);
+            _selected = r.Rules >= 3 ? 1 : r.MyRanks[index];
             _index=index;
-            _name.text=r.Names[index];_rank.text=_selected>0?"第"+PredictionMod.N(_selected)+"名":"—";
-            _holding.text=r.Forfeited && r.Ranks[index]==0 ? "离场已放弃" : r.Stakes[index]>0?"猜"+PredictionMod.N(r.MyRanks[index])+"名 · "+PredictionMod.N(r.Rules==2?r.Claims[index]:r.Stakes[index])+"分":"未持仓";
+            _name.text=r.Names[index];_rank.text=r.Rules>=3?"冠军":_selected>0?"第"+PredictionMod.N(_selected)+"名（旧）":"旧盘口"; _bar.Minus.SetActive(false); _bar.Plus.SetActive(false);
+            _holding.text=r.Forfeited && r.Ranks[index]==0 ? "离场已放弃" : r.Stakes[index]>0?"猜"+PredictionMod.N(r.MyRanks[index])+"名 · "+PredictionMod.N(r.Rules>=2?r.Claims[index]:r.Stakes[index])+"马币":"未持仓";
             HorseMember horse=_mod.Horses.FindMember(focus);
             _bar.Badge.sprite=horse==null?null:_mod.Horses.GetSprite(horse.IconTitle);
             _bar.Badge.gameObject.SetActive(!_collapsed&&_bar.Badge.sprite!=null);
@@ -50,14 +50,14 @@ namespace YxPrediction
             if(_selected>0)
             {
                 long pool=0;for(int i=0;i<8;i++)pool+=r.Pools[index*8+i];long chosen=r.Pools[index*8+_selected-1];
-                _bar.Rate.text=!online||r.Rules==2?PredictionMod.Rate(r.QuoteRates[index*8+_selected-1]):chosen>0?(pool/(double)chosen).ToString("0.00",CultureInfo.InvariantCulture)+"x":"—";
+                _bar.Rate.text=!online||r.Rules>=2?PredictionMod.Rate(r.QuoteRates[index*8+_selected-1]):chosen>0?(pool/(double)chosen).ToString("0.00",CultureInfo.InvariantCulture)+"x":"—";
             }
             else _bar.Rate.text="—";
-            bool open=r.Open && r.Ranks[index]==0;
-            _buy.SetInteractable(open&&_selected>0);_half.SetInteractable(open&&r.Stakes[index]>0);_sell.SetInteractable(open&&r.Stakes[index]>0);
+            bool open=BettingAccess.CanTrade(r,_mod.Snapshot,index);
+            _buy.SetInteractable(open&&r.Rules>=3&&_selected>0);_half.SetInteractable(open&&r.Stakes[index]>0);_sell.SetInteractable(open&&r.Stakes[index]>0);
             _buy.SetText(r.Stakes[index]>0?(r.MyRanks[index]==_selected?"加注":"换猜"):"投入");
             _half.SetActive(!_collapsed&&r.Stakes[index]>0);_sell.SetActive(!_collapsed&&r.Stakes[index]>0);
-            _bar.SetCollapsed(_collapsed);
+            _bar.SetCollapsed(_collapsed); _bar.Minus.SetActive(false); _bar.Plus.SetActive(false);
             var rt=_root.transform as RectTransform;var parent=rt.parent as RectTransform;
             float scale=Mathf.Min(1.15f,(parent.rect.width-32f)/990f);rt.localScale=new Vector3(scale,scale,1);
             bool hand,talent;GameBridge.InspectBottomHandZone(out hand,out talent);
@@ -68,11 +68,11 @@ namespace YxPrediction
         void Minus(){Step(false);}
         void Plus(){Step(true);}
         bool Valid(){RoomState r=_mod.OnlinePanel.CurrentView();return r!=null&&r.GameId==_game&&r.Code==_room&&_index>=0&&r.Uids[_index]==_uid&&FocusSelection.Uid(_mod.Snapshot)==_uid;}
-        void Buy(){if(!Valid())return;_selected=_mod.OnlinePanel.Selections.Selected(_uid);if(_selected<1||_selected>8)return;long amount;if(!long.TryParse(_stake.Text,NumberStyles.None,CultureInfo.InvariantCulture,out amount)||amount<1||amount>10000){_mod.OnlinePanel.SetFeedback("投入须为1至10000整数");return;}_mod.OnlinePanel.Submit(_index,_selected,amount,0);}
+        void Buy(){if(!Valid())return;_selected=1;long amount;if(!long.TryParse(_stake.Text,NumberStyles.None,CultureInfo.InvariantCulture,out amount)||amount<1||amount>10000){_mod.OnlinePanel.SetFeedback("投入须为1至10000整数");return;}_mod.OnlinePanel.Submit(_index,_selected,amount,0);}
         void Half(){if(Valid())_mod.OnlinePanel.Submit(_index,0,0,1);}
         void Sell(){if(Valid())_mod.OnlinePanel.Submit(_index,0,0,2);}
         void Overview(){_mod.OnlinePanel.Toggle();}
-        void Collapse(){_collapsed=!_collapsed;_bar.SetCollapsed(_collapsed);}
+        void Collapse(){_collapsed=!_collapsed;_bar.SetCollapsed(_collapsed); _bar.Minus.SetActive(false); _bar.Plus.SetActive(false);}
         public void Destroy(){if(_bar!=null)_bar.Destroy();_ui.DestroyAll();_root=null;}
     }
 }
