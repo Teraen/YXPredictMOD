@@ -1,9 +1,9 @@
 {
-  "version": "0.7.10",
-  "tag": "v0.7.10",
-  "title": "v0.7.10 - 提醒弹窗与新版简介",
-  "artifact": "dist/天机赌马-0.7.10.zip",
-  "sha256": "ad01f73b1feeb47456de40d9cedb284e7b25d971ce9f94fc158cd70df43d23a0",
-  "notes": ".github/releases/v0.7.10.md",
-  "assetName": "tianji-duma-0.7.10.zip"
+  "version": "0.7.13",
+  "tag": "v0.7.13",
+  "title": "v0.7.13 - 冠军预测、公开房间与马币榜",
+  "artifact": "dist/天机赌马-0.7.13.zip",
+  "sha256": "d19e8e5384f412b682246fe27f0430f24d88b7eaed1f2515ccb261bdc7dac0c1",
+  "notes": ".github/releases/v0.7.13.md",
+  "assetName": "tianji-duma-0.7.13.zip"
 }
