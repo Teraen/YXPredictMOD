@@ -12,6 +12,7 @@ namespace YxPrediction
     public sealed class EloClient
     {
         public const int MaximumRequests = 4;
+        public const int MaximumResponseCharacters = 65536;
         readonly ModContext _ctx;
         readonly Job[] _jobs = new Job[MaximumRequests];
         readonly Dictionary<string, Cached> _profiles = new Dictionary<string, Cached>();
@@ -31,6 +32,7 @@ namespace YxPrediction
             public string[] Targets;
             public UnityWebRequest Request;
             public EloShardScan Scan;
+            public float Deadline;
         }
         public EloClient(ModContext ctx) { _ctx = ctx; }
         bool TryCached(string uid, out Cached cached)
@@ -70,7 +72,7 @@ namespace YxPrediction
             for (int i = 0; i < 8; i++)
             {
                 Cached cached;
-                profiles[i] = !players[i].IsAi && TryCached(players[i].Uid, out cached) ? cached.Profile : new HorseProfile(Rating.Unknown());
+                profiles[i] = players[i] != null && !players[i].IsAi && EloData.IsPublicUid(players[i].Uid) && TryCached(players[i].Uid, out cached) ? cached.Profile : new HorseProfile(Rating.Unknown());
             }
             return profiles;
         }
@@ -99,7 +101,7 @@ namespace YxPrediction
                 if (!TryCached(uid, out cached) && !Running(uid)) targets.Add(uid);
             }
             if (targets.Count == 0) return;
-            var job = new Job { Targets = targets.ToArray() }; _jobs[slot] = job;
+            var job = new Job { Targets = targets.ToArray(), Deadline = Time.unscaledTime + 10f }; _jobs[slot] = job;
             try { job.Request = UnityWebRequest.Get(EloData.BatchUrl(job.Targets)); job.Request.timeout = 8; job.Request.SendWebRequest(); }
             catch (Exception ex) { Fail(slot, ex.Message); }
         }
@@ -152,8 +154,14 @@ namespace YxPrediction
                         {
                             decoded = true; worked = true;
                             if (job.Request.isNetworkError || job.Request.isHttpError) throw new InvalidOperationException(job.Request.error);
-                            job.Scan = new EloShardScan(job.Request.downloadHandler.text, job.Targets);
+                            string response = job.Request.downloadHandler.text;
+                            if (response == null || response.Length > MaximumResponseCharacters) throw new FormatException("Elo查询响应过大或为空");
+                            job.Scan = new EloShardScan(response, job.Targets);
                             job.Request.Dispose(); job.Request = null;
+                        }
+                        else if (job.Request != null && !job.Request.isDone && Time.unscaledTime >= job.Deadline)
+                        {
+                            Fail(slot, "请求超时"); worked = true;
                         }
                     }
                     catch (Exception ex) { Fail(slot, ex.Message); worked = true; }

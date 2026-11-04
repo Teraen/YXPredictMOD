@@ -44,7 +44,7 @@ internal static class Program
             if(request.isDone)continue;
             var rows=new Dictionary<string,object>();
             if(!missing)for(int i=0;i<players.Length;i++)
-                if(request.url.Contains("uid="+players[i].Uid))rows[players[i].Uid]=new Dictionary<string,object>{{"rating",invalid&&i==0?99999:4200},{"sigma",150},{"dx",12}};
+                if(players[i]!=null&&request.url.Contains("uid="+players[i].Uid))rows[players[i].Uid]=new Dictionary<string,object>{{"rating",invalid&&i==0?99999:4200},{"sigma",150},{"dx",12}};
             request.downloadHandler.text=Json.Serialize(rows);request.isDone=true;
         }
     }
@@ -103,6 +103,41 @@ internal static class Program
         {
             var mod=Load(host);var p=Players();for(int i=0;i<8;i++)p[i]=new Player("invalid","AI",i<4);
             Require(mod.Elo.Get(p)!=null&&UnityEngine.Networking.UnityWebRequest.Sent.Count==0,"AI/invalid UID started HTTP");
+        }
+        using(var host=TestHost.Start())
+        {
+            var mod=Load(host);var p=Players();
+            for(int i=1;i<7;i++)p[i]=new Player("invalid","AI",true);
+            p[7]=null;
+            mod.Elo.Get(p);
+            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==1,"Single human must use one request");
+            Require(UnityEngine.Networking.UnityWebRequest.Sent[0].url==EloData.Url(p[0].Uid),"Single UID queried unrelated players");
+            Complete(p);Drain(mod);
+            Require(mod.Elo.GetHorseProfiles(p)[0].Rating.Found&&!mod.Elo.GetHorseProfiles(p)[7].Rating.Found,"Null roster slot blocked an eligible player");
+        }
+        using(var host=TestHost.Start())
+        {
+            var mod=Load(host);var p=Players();for(int i=1;i<8;i++)p[i]=p[0];
+            mod.Elo.Get(p);Require(UnityEngine.Networking.UnityWebRequest.Sent[0].url==EloData.Url(p[0].Uid),"Duplicate UID repeated in query");
+            Complete(p);Drain(mod);Require(mod.Elo.Get(p)[7].Found,"Duplicate roster member lost result");
+        }
+        using(var host=TestHost.Start())
+        {
+            var mod=Load(host);var p=Players();mod.Elo.Get(p);
+            UnityEngine.Time.unscaledTime=11;Drain(mod);
+            Require(mod.Elo.Get(p)!=null&&mod.Elo.Summary.Contains("请求失败 8"),"Stalled native request never timed out");
+            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==1,"Timeout fetched an old shard");
+            Require(UnityEngine.Networking.UnityWebRequest.Sent[0].Disposed,"Stalled native request leaked");
+            UnityEngine.Time.unscaledTime=42;mod.Elo.Get(p);Complete(p);Drain(mod);
+            Require(mod.Elo.Get(p)[0].Found,"Deadline timeout cannot recover");
+        }
+        using(var host=TestHost.Start())
+        {
+            var mod=Load(host);var p=Players();mod.Elo.Get(p);
+            var request=UnityEngine.Networking.UnityWebRequest.Sent[0];
+            request.downloadHandler.text=new string(' ',EloClient.MaximumResponseCharacters+1);request.isDone=true;Drain(mod);
+            Require(mod.Elo.Get(p)!=null&&mod.Elo.Summary.Contains("请求失败 8"),"Oversized response accepted");
+            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==1,"Oversized response fell back to full shards");
         }
         using(var host=TestHost.Start())
         {
