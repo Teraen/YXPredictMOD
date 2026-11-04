@@ -74,7 +74,7 @@ internal static partial class Program
             profiles[7] = new HorseProfile(new Rating(100, 10, true));
             var roster = new HorseRoster(); roster.Observe(s, profiles);
             Equal(roster.Find(s.Players[0].Uid).Title, "中等马");
-            Equal(roster.Find(s.Players[0].Uid).PlateCaption, "中等马 4400");
+            Equal(roster.Find(s.Players[0].Uid).PlateCaption, "中等马");
             profiles[0] = new HorseProfile(Rating.Unknown()); roster.Observe(s, profiles);
             Equal(roster.Find(s.Players[0].Uid).Title, "");
         });

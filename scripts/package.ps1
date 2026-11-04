@@ -15,7 +15,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'SDK打包失败。' }
     $manifest = Get-Content -LiteralPath 'mod/manifest.json' -Encoding UTF8 -Raw | ConvertFrom-Json
     $stagedPackage = Join-Path $stage ($manifest.id + '-' + $manifest.version + '.zip')
-    $package = Join-Path $dist ('天机赌马-' + $manifest.version + '.zip')
+    $package = Join-Path $dist ($manifest.name + '-' + $manifest.version + '.zip')
     # The archive root stays the mod ID so the manager can upgrade existing installs.
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem

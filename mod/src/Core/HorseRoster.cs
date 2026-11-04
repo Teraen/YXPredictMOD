@@ -60,6 +60,8 @@ namespace YxPrediction
         public string Name, BaseTitle = "";
         public HorseProfile Profile;
         public bool DarkHorse;
+        public bool AllocatedTier;
+        public string RoomTitle;
         public int ConsecutiveWins { get; private set; }
         int _round, _wins, _losses, _lastResultRound;
         bool _baseline;
@@ -83,24 +85,24 @@ namespace YxPrediction
                 default: return "电子马·简单";
             }
         }
-        public string Title { get { return IsAi ? _aiTitle : (DarkHorse ? "黑马" : BaseTitle); } }
+        public string Title { get { return RoomTitle != null ? RoomTitle : IsAi ? _aiTitle : (AllocatedTier ? (BaseTitle.Length > 0 ? BaseTitle : "未定马") : DarkHorse ? "黑马" : BaseTitle); } }
         public string IconTitle { get { return IsAi ? "机械马" : Title; } }
-        public string PlateCaption
-        { get { return Title + (!IsAi && Profile != null && Profile.Rating.Found ? " " + Profile.Rating.Score.ToString("0", CultureInfo.InvariantCulture) : ""); } }
-        public string Tags { get { return !IsAi && Profile != null && Profile.Spinning ? "旋转木马" : ""; } }
+        public string PlateCaption { get { return Title; } }
+        public string Tags { get { string tag = AllocatedTier && DarkHorse ? "黑马" : ""; return !IsAi && Profile != null && Profile.Spinning ? (tag.Length > 0 ? tag + " · 旋转木马" : "旋转木马") : tag; } }
         public string Caption { get { return Title + (Tags.Length > 0 ? " · " + Tags : ""); } }
         public string Explanation
         {
             get
             {
                 if (IsAi) return "AI随机装饰称号，同局保持不变；不代表实际难度，不参与Elo分档或赔率计算";
+                if (AllocatedTier) return "本局随机换档后的马匹称号，基础倍率采用同一档位；实时命元和胜负仍取本人";
                 if (DarkHorse) return "本局Elo后半，已观察到连续两胜";
                 switch (BaseTitle)
                 {
                     case "特等马": return "本局已查到的Elo最高";
                     case "上等马": return "本局已查到的Elo第二";
                     case "牛马": return "本局已查到的Elo最低";
-                    case "海马": return "本局Elo最低，距上一档至少400分";
+                    case "海马": return "本局Elo最低，与上一档差距较大";
                     case "中等马": return "按本局已查到的Elo分档";
                     default: return "暂无公开Elo，不参与分档";
                 }
@@ -130,56 +132,76 @@ namespace YxPrediction
     {
         public string MatchId { get; private set; }
         public HorseMember[] Members { get; private set; }
+        int[] _sources;
+        bool _shuffle, _profilesLocked;
         public HorseMember Find(string uid)
         {
             if (Members != null && uid != null) for (int i = 0; i < Members.Length; i++) if (Members[i].Uid == uid) return Members[i];
             return null;
         }
-        public void Clear() { MatchId = null; Members = null; }
+        public void Clear() { MatchId = null; Members = null; _sources = null; _profilesLocked = false; }
+        public void RoomTitles(string[] uids, string[] titles)
+        {
+            if (Members == null) return;
+            for (int i = 0; i < Members.Length; i++) Members[i].RoomTitle = null;
+            if (uids == null || titles == null || uids.Length != 8 || titles.Length != 8) return;
+            for (int i = 0; i < 8; i++) { HorseMember member = Find(uids[i]); if (member != null) member.RoomTitle = titles[i]; }
+        }
         public void Observe(MatchSnapshot snapshot, HorseProfile[] profiles)
+        { Observe(snapshot, profiles, snapshot != null && snapshot.ShuffleHorses); }
+        public void Observe(MatchSnapshot snapshot, HorseProfile[] profiles, bool shuffle)
         {
             if (snapshot == null || !snapshot.IsEightPlayerMatch() || (snapshot.States != null && snapshot.States.Length != 8)) { Clear(); return; }
-            bool reset = MatchId != snapshot.Id || Members == null;
+            bool reset = MatchId != snapshot.Id || Members == null || _shuffle != shuffle;
             if (!reset) for (int i = 0; i < 8; i++) if (Find(snapshot.Players[i].Uid) == null) reset = true;
             if (reset)
             {
                 MatchId = snapshot.Id; Members = new HorseMember[8];
                 for (int i = 0; i < 8; i++) Members[i] = new HorseMember(snapshot.Players[i], snapshot.Id);
+                _shuffle = shuffle; _sources = shuffle ? HorseShuffle.Sources(snapshot.Id, snapshot.Players) : null; _profilesLocked = false;
             }
             for (int i = 0; i < 8; i++)
             {
                 HorseMember member = Find(snapshot.Players[i].Uid);
                 member.Name = snapshot.Players[i].Name;
-                if (profiles != null && profiles.Length == 8 && profiles[i] != null) member.Profile = profiles[i];
+                member.AllocatedTier = _shuffle && !member.IsAi;
+                if ((!_shuffle || !_profilesLocked) && profiles != null && profiles.Length == 8 && profiles[i] != null) member.Profile = profiles[i];
                 member.Observe(snapshot.Round, snapshot.States == null ? null : snapshot.States[i]);
+            }
+            if (_shuffle && profiles != null && profiles.Length == 8)
+            {
+                bool complete = true; for (int i = 0; i < 8; i++) if (profiles[i] == null) complete = false;
+                if (complete) _profilesLocked = true;
             }
             AssignTitles(snapshot);
         }
+        HorseProfile ProfileAt(int index) { return Members[_shuffle ? _sources[index] : index].Profile; }
         void AssignTitles(MatchSnapshot snapshot)
         {
             int rated = 0;
             double minimum = 10001, maximum = -1, aboveMinimum = 10001;
             for (int i = 0; i < 8; i++)
             {
-                HorseProfile p = Members[i].Profile;
+                HorseProfile p = ProfileAt(i);
                 if (Members[i].IsAi || p == null || !p.Rating.Found) continue;
                 double score = p.Rating.Score;
                 rated++; minimum = Math.Min(minimum, score); maximum = Math.Max(maximum, score);
             }
             for (int i = 0; i < 8; i++)
             {
-                HorseProfile p = Members[i].Profile;
+                HorseProfile p = ProfileAt(i);
                 if (!Members[i].IsAi && p != null && p.Rating.Found && p.Rating.Score > minimum) aboveMinimum = Math.Min(aboveMinimum, p.Rating.Score);
             }
             for (int i = 0; i < 8; i++)
             {
                 HorseMember member = Members[i];
                 member.BaseTitle = ""; member.DarkHorse = false;
-                if (member.IsAi || member.Profile == null || !member.Profile.Rating.Found) continue;
-                double score = member.Profile.Rating.Score;
+                HorseProfile profile = ProfileAt(i);
+                if (member.IsAi || profile == null || !profile.Rating.Found) continue;
+                double score = profile.Rating.Score;
                 int higher = 0;
                 for (int j = 0; j < 8; j++)
-                    if (!Members[j].IsAi && Members[j].Profile != null && Members[j].Profile.Rating.Found && Members[j].Profile.Rating.Score > score) higher++;
+                    if (!Members[j].IsAi && ProfileAt(j) != null && ProfileAt(j).Rating.Found && ProfileAt(j).Rating.Score > score) higher++;
                 member.BaseTitle = "中等马";
                 if (rated >= 2 && maximum > minimum)
                 {

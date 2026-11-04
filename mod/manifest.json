@@ -1,9 +1,9 @@
 {
   "id": "local.yxp.predictionpoints",
-  "name": "天机赌马",
-  "version": "0.7.14",
+  "name": "天机赛马",
+  "version": "0.8.3",
   "author": "@TeraE / @Airexplosion",
-  "description": "【观战模式】只猜冠军，第二名返还锁定中奖额25%、第三名10%；第10回合起封盘，退出角色不能投注。支持公开房间列表、私密创建、随机匹配与命元走势。网页榜单可用攻略站YG登录，绑定马币账户后查看净收益和改名。\n\n【天梯/道心模式】显示Elo与趣味马匹称号；默认显示角色头像，悬停或查看角色时显示马图，Ctrl+Shift+H切换显示模式。\n\n马币榜与每日签到：https://duma.kaigua.vip/（YG登录绑定后，每天可领取200马币）；Elo查询使用同服务器elo.kaigua.vip。",
+  "description": "QQ群613486881整点赛马：无需认证，发送“赛马注册 昵称”开通QQ钱包并查看流程；指令可省略斜杠，也可先@机器人。之后认证游戏账号可同步马币。\n\n房间观众匿名显示，成员列表和入房提示不公开真实昵称或UID。\n\n仙府观战预测，只猜冠军；第10回合起封盘，退出角色禁投。第一/二/三名返还锁定额度的100/25/10%。网站同一时间只直播一场公开对局，其余房间在游戏内使用。网页可持续查看公开牌桌、对战胜负和命元走势，YG登录后共用马币账户下注、改名及每日签到领取200马币。\n\n新局隐藏具体评级分数，每局随机交换2–3匹真人马的档位与基础评级，真人昵称不变。\n\nElo使用同服务器elo.kaigua.vip的八人批量API。默认保留人物头像，悬停显示马图，Ctrl+Shift+H切换。\n\n网页：https://duma.kaigua.vip/",
   "sdkVersion": ">=1.0.0 <2.0.0",
   "entry": "plugins/PredictionPoints.dll",
   "entryType": "YxPrediction.PredictionMod",

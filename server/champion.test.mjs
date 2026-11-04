@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 import {Rooms} from './rooms.mjs';
 import {createHandler} from './server.mjs';
 import http from 'node:http';
+test('random tier rooms require protocol four before joining or spending; legacy champion protocol stays supported',async()=>{
+ const x=fixture();x.rooms.state.rooms[x.code].horseShuffle=true;
+ const server=http.createServer(createHandler(x.rooms));await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const post=(body)=>fetch('http://127.0.0.1:'+server.address().port+'/v1/room',{method:'POST',headers:{authorization:'Bearer '+x.b,'content-type':'application/json'},body:JSON.stringify(body)});
+ try{
+  assert.equal((await post({action:'join',protocol:3,code:x.code,gameId:x.snapshot.id})).status,409);
+  assert.equal((await post({action:'join',protocol:4,code:x.code,gameId:x.snapshot.id})).status,200);
+  const order={action:'trade',code:x.code,player:0,rank:1,stake:10,kind:'buy',version:x.rooms.view(x.code,x.b).version,operation:'tier-protocol-buy'};
+  assert.equal((await post({...order,protocol:3})).status,409);assert.equal(x.rooms.view(x.code,x.b).balance,1000);
+  assert.equal((await post({...order,protocol:4})).status,200);assert.equal(x.rooms.view(x.code,x.b).balance,990);
+ }finally{await new Promise(r=>server.close(r));}
+});
 export function fixture(options={}) {
  let now=100000;const rooms=new Rooms(undefined,options.save,()=>now,options);
  const a=rooms.register('甲').token,b=rooms.register('乙').token;

@@ -11,7 +11,7 @@ namespace YxPrediction
         public static Dictionary<string, object> Write(PredictionBook book)
         {
             var root = Obj();
-            root["version"] = 5;
+            root["version"] = 6;
             root["balance"] = book.Balance;
             var markets = new List<object>();
             root["markets"] = markets;
@@ -21,6 +21,7 @@ namespace YxPrediction
                 var row = Obj();
                 row["id"] = m.Id;
                 row["rules"] = m.RuleVersion;
+                row["horseShuffle"] = m.UseHorseShuffle;
                 row["round"] = m.HighestRound;
                 row["locked"] = m.Locked;
                 row["settled"] = m.Settled;
@@ -140,7 +141,7 @@ namespace YxPrediction
                 }
             }
             var rates = Array(data, "rates", 64, 64);
-            int[] expected = market.QuoteStates == null ? new int[64] : TradingOdds.Rates(market.Ratings, market.QuoteStates, market.QuoteRound, market.ChampionOnly);
+            int[] expected = market.QuoteStates == null ? new int[64] : TradingOdds.Rates(HorseShuffle.Ratings(market), market.QuoteStates, market.QuoteRound, market.ChampionOnly);
             for (int i = 0; i < 64; i++)
             {
                 int rate = ArrayNumber(rates, i, 0, Odds.MaximumRateBps);
@@ -202,7 +203,7 @@ namespace YxPrediction
         public static PredictionBook Read(Dictionary<string, object> root)
         {
             if (root == null) throw new FormatException("马币存档为空");
-            int formatVersion = (int)Number(root, "version", 1, 5);
+            int formatVersion = (int)Number(root, "version", 1, 6);
             var book = new PredictionBook(Number(root, "balance", 0, Odds.MaximumBalance));
             var markets = Array(root, "markets", 0, 12);
             for (int n = 0; n < markets.Count; n++)
@@ -226,6 +227,7 @@ namespace YxPrediction
                 for (int i = 0; i < 64; i++) rates[i] = ArrayNumber(rawRates, i, 10100, Odds.MaximumRateBps);
                 int rules = formatVersion == 1 ? Odds.ExactOnlyRuleVersion : (int)Number(row, "rules", Odds.ExactOnlyRuleVersion, formatVersion == 2 ? Odds.AdjacentRuleVersion : Odds.CurrentRuleVersion);
                 var market = new Market(id, players, ratings, rates, rules);
+                market.UseHorseShuffle = formatVersion >= 6 && Json.GetBool(row, "horseShuffle", false);
                 market.HighestRound = (int)Number(row, "round", 1, 100000);
                 market.Locked = Json.GetBool(row, "locked", false);
                 market.Settled = Json.GetBool(row, "settled", false);

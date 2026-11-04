@@ -15,7 +15,18 @@ internal static partial class Program
     static int Main(string[] args)
     {
         if (args.Length > 1 && args[0] == "--rule-parity") { ExportRuleParity(args[1]); return 0; }
+        if (args.Length > 1 && args[0] == "--observer-quotes") { ExportObserverQuotes(args[1]); return 0; }
         if (args.Length > 0 && args[0] == "--demo") { Demo(); return 0; }
+        Check("public table copies preserve slots without mutating native collections", delegate
+        {
+            var cards = new List<int> { 1000011, 0, 1000021 };
+            int[] copied = PublicCardSequence.Copy(cards); Equal(copied.Length, 3); Equal(copied[1], 0);
+            copied[0] = 3; Equal(cards[0], 1000011);
+            True(PublicCardSequence.Copy(new object[] { "invalid" }) == null);
+            True(PublicCardSequence.Copy(new int[9]) == null);
+            True(PublicCardSequence.Copy(new int[] { -1 }) == null);
+        });
+        HorseShuffleChecks();
         Check("equal Elo gives uniform rank probabilities", delegate
         {
             double[] p = Odds.Probabilities(Ratings(false));

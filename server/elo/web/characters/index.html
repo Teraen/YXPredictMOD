@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer"><meta name="color-scheme" content="dark">
+<title>角色 Elo 强度榜 · 百家之道</title><link rel="icon" href="data:,">
+<link rel="stylesheet" href="board.css?v=2"><script src="season.js?v=2" defer></script></head>
+<body><main>
+<nav class="crumb" aria-label="站内导航"><a href="/">弈仙牌数据</a><span>/</span><a href="/elo/">匿名玩家榜</a><span>/</span><strong>角色强度</strong></nav>
+<header><div><p class="kicker">百家之道 · 天梯与道心</p><h1>角色 Elo 强度榜</h1>
+<p class="intro">换角校正 Elo · 对照同一玩家换角色后的表现，估计角色在同桌对手中的相对强度。</p></div></header>
+<div class="switch" aria-label="平衡时期"><button type="button" data-phase="3">第三期 · 10月29日起</button><button type="button" data-phase="2">第二期 · 10月22日起</button><button type="button" data-phase="1">第一期 · 10月15日起</button></div>
+<p id="status" role="status">正在读取评分…</p>
+<section id="board" hidden>
+<section class="brief" aria-label="本期范围"><div><span class="over" id="modeLabel"></span><h2 id="period"></h2><p id="coverage"></p></div>
+<dl><div><dt>计分对局</dt><dd id="games"></dd></div><div><dt>不同玩家</dt><dd id="players"></dd></div></dl></section>
+<div class="leads" id="leads" aria-label="各分段榜首"></div>
+<section class="ranking"><div class="sectionhead"><div><p class="kicker">角色排名</p><h2 id="tableTitle">总体排名</h2></div>
+<label class="search"><span>查找角色</span><input id="search" type="search" autocomplete="off" placeholder="输入角色名"></label></div>
+<div class="filters"><div class="bands" aria-label="积分分段"><button type="button" data-band="overall">总体</button><button type="button" data-band="mid">3000–5999</button><button type="button" data-band="high">6000及以上</button></div>
+<a href="reference.html?source=live" id="careerLink">副职参考（旧版公式）</a></div>
+<p class="caption" id="caption"></p>
+<div class="tablewrap"><table><thead><tr><th>排名</th><th>角色</th><th aria-sort="descending">Elo ↓</th><th id="aux1"></th><th id="aux2"></th><th>出场人次</th><th id="userLabel">不同玩家</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p id="empty" hidden>没有找到这个角色，可以清空搜索再看。</p></section>
+<details><summary>计分口径与更新安排</summary>
+<p>本赛季从北京时间10月15日11:00起计。10月22日和29日14:00平衡调整后，玩家与角色分别从3000重新估分。随机选角计入实际使用的角色。</p>
+<p>同一玩家长期只用一个角色时，模型会降低这部分成绩对角色分差的影响。两段总体分各占50%，少于20人次或8位玩家标为初评。历史档案仅在能确认分段时计入分段样本。</p>
+<p>当前期每10分钟开始重新计算，按开局与结算时间逐局更新分数，补录和更正的对局也会重算。计算完成后，网站与页面每分钟检查新结果。尚未结束或未核实的对局暂不计入。时间均为北京时间。</p><p id="notes"></p></details>
+</section><footer><a href="/">数据首页</a><a href="/elo/">匿名玩家 Elo 榜</a><span>弈仙牌数据</span></footer>
+</main></body></html>

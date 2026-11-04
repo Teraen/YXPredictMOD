@@ -37,64 +37,67 @@ internal static class Program
     {
         var p=new Player[8];for(int i=0;i<8;i++)p[i]=new Player(i.ToString("x22")+(shared?"aa":i.ToString("x2")),"player",false);return p;
     }
-    static void Complete(Player[] players,bool missing=false)
+    static void Complete(Player[] players,bool missing=false,bool invalid=false)
     {
         foreach(var request in UnityEngine.Networking.UnityWebRequest.Sent)
         {
             if(request.isDone)continue;
             var rows=new Dictionary<string,object>();
-            if(!missing)foreach(var p in players)if(request.url.EndsWith(p.Uid.Substring(22)+".json"))
-                rows[p.Uid]=new Dictionary<string,object>{{"rating",4200},{"sigma",150},{"dx",12}};
+            if(!missing)for(int i=0;i<players.Length;i++)
+                if(request.url.Contains("uid="+players[i].Uid))rows[players[i].Uid]=new Dictionary<string,object>{{"rating",invalid&&i==0?99999:4200},{"sigma",150},{"dx",12}};
             request.downloadHandler.text=Json.Serialize(rows);request.isDone=true;
         }
     }
     static PredictionMod Load(TestHost host)
     {
         UnityEngine.Networking.UnityWebRequest.Sent.Clear();UnityEngine.Time.unscaledTime=0;
-        return host.Load<PredictionMod>("elo.checks","0.7.6");
+        return host.Load<PredictionMod>("elo.checks","0.8.0");
     }
+    static void Drain(PredictionMod mod) { for(int i=0;i<40;i++)mod.Elo.Update(); }
     static void Main()
     {
         using(var host=TestHost.Start())
         {
-            var mod=Load(host);var p=Players();
-            Require(mod.Elo.Get(p)==null,"Unexpected pre-request result");
-            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==4,"Requests not started concurrently/bounded to four");
-            foreach(var req in UnityEngine.Networking.UnityWebRequest.Sent)Require(req.url.StartsWith(EloData.BaseUrl),"Primary endpoint was not preferred");
-            for(int frame=0;frame<40;frame++){Complete(p);mod.Elo.Update();}
-            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==8,"Next wave waits for the half-second game poll");
-            var ratings=mod.Elo.Get(p);Require(ratings!=null&&ratings[7].Found,"Concurrent query did not finish all eight");
-            var profiles=mod.Elo.GetHorseProfiles(p);Require(profiles[7].DaoXinGames==12,"Horse metadata lost");
-            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==8,"Cached profiles re-requested");
+            var mod=Load(host);var p=Players();Require(mod.Elo.Get(p)==null,"Unexpected pre-request result");
+            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==1,"Eight players must use one batch request");
+            string url=UnityEngine.Networking.UnityWebRequest.Sent[0].url;
+            Require(url.StartsWith(EloData.ApiUrl+"?uid="),"Batch endpoint not on same-server Elo host");
+            foreach(var player in p)Require(url.Contains("uid="+player.Uid),"Batch dropped a UID");
+            Complete(p);Drain(mod);Require(mod.Elo.Get(p)[7].Found,"Batch did not finish all eight");
+            Require(mod.Elo.GetHorseProfiles(p)[7].DaoXinGames==12,"Horse metadata lost");
+            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==1,"Cache re-requested batch");
+            UnityEngine.Time.unscaledTime=301;Require(mod.Elo.Get(p)==null,"Successful cache never refreshes");
+            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==2,"Expired cache did not re-batch");
             mod.Elo.Destroy();foreach(var req in UnityEngine.Networking.UnityWebRequest.Sent)Require(req.Disposed,"Request leaked");
         }
         using(var host=TestHost.Start())
         {
-            var mod=Load(host);var p=Players(true);mod.Elo.Get(p);
-            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==1,"Same shard downloaded more than once");
-            Complete(p);for(int frame=0;frame<10;frame++)mod.Elo.Update();
-            Require(mod.Elo.Get(p)!=null&&mod.Elo.GetHorseProfiles(p)[7].Rating.Found,"Shared shard missed roster members");
+            var mod=Load(host);var p=Players(true);mod.Elo.Get(p);Complete(p);Drain(mod);
+            Require(mod.Elo.GetHorseProfiles(p)[7].Rating.Found,"Same suffix lost roster members");
+            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==1,"Same suffix downloaded twice");
         }
         using(var host=TestHost.Start())
         {
             var mod=Load(host);var p=Players();mod.Elo.Get(p);
-            var failed=UnityEngine.Networking.UnityWebRequest.Sent[0];failed.isNetworkError=true;failed.error="timeout";failed.isDone=true;
-            for(int frame=0;frame<40;frame++)
-            {
-                foreach(var req in UnityEngine.Networking.UnityWebRequest.Sent) if(!req.isDone && req.url.StartsWith(EloData.FallbackBaseUrl)) { req.isNetworkError=true;req.isDone=true;req.error="offline"; }
-                Complete(p);mod.Elo.Update();
-            }
-            var result=mod.Elo.Get(p);Require(result!=null&&!result[0].Found&&result[7].Found,"One failure blocked unrelated shards");
-            Require(mod.Elo.Summary.Contains("请求失败 1"),"Failure mislabeled as missing");
-            UnityEngine.Time.unscaledTime=31;Require(mod.Elo.Get(p)==null,"Failed shard did not retry after cooldown");
-            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==10,"Retry downloaded cached successful shards");
-            Complete(p);for(int frame=0;frame<10;frame++)mod.Elo.Update();Require(mod.Elo.Get(p)[0].Found,"Retry did not recover");
+            var failed=UnityEngine.Networking.UnityWebRequest.Sent[0];failed.isNetworkError=true;failed.error="timeout";failed.isDone=true;Drain(mod);
+            Require(mod.Elo.Get(p)!=null&&!mod.Elo.Get(p)[7].Found,"Batch failure blocked fallback");
+            Require(mod.Elo.Summary.Contains("请求失败 8"),"Network failure mislabeled as missing");
+            UnityEngine.Time.unscaledTime=31;Require(mod.Elo.Get(p)==null,"Failed request did not retry");Complete(p);Drain(mod);
+            Require(mod.Elo.Get(p)[0].Found,"Retry did not recover");
         }
         using(var host=TestHost.Start())
         {
-            var mod=Load(host);var p=Players(true);mod.Elo.Get(p);Complete(p,true);
-            for(int i=0;i<20;i++){Complete(p,true);mod.Elo.Update();}Require(!mod.Elo.Get(p)[0].Found&&mod.Elo.Summary.Contains("未收录 8"),"Missing IDs were reported as failures");
-            mod.Elo.Get(p);Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==2,"Missing IDs re-download same shard");
+            var mod=Load(host);var p=Players();mod.Elo.Get(p);Complete(p,false,true);Drain(mod);
+            Require(!mod.Elo.Get(p)[0].Found&&mod.Elo.Get(p)[7].Found,"Bad row blocked unrelated identities");
+            Require(mod.Elo.Summary.Contains("请求失败 1"),"Bad profile not distinguished");
+        }
+        using(var host=TestHost.Start())
+        {
+            var mod=Load(host);var p=Players();mod.Elo.Get(p);Complete(p,true);Drain(mod);
+            Require(mod.Elo.Get(p)!=null,"Missing profiles blocked result");
+            Require(mod.Elo.Summary.Contains("未收录 8"),"Missing profiles reported as failures");
+            mod.Elo.Get(p);Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==1,"Missing cache ignored");
+            UnityEngine.Time.unscaledTime=31;Require(mod.Elo.Get(p)==null,"Missing UID never retries after source updates");
         }
         using(var host=TestHost.Start())
         {
@@ -103,30 +106,12 @@ internal static class Program
         }
         using(var host=TestHost.Start())
         {
-            var mod=Load(host);mod.Elo.Get(Players());mod.Elo.Destroy();mod.Elo.Update();
+            var mod=Load(host);
+            for(int wave=0;wave<6;wave++){var p=Players();for(int i=0;i<8;i++)p[i]=new Player((wave*8+i).ToString("x24"),"player",false);mod.Elo.Get(p);}
+            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==4,"Concurrent focus changes exceeded four jobs");
+            mod.Elo.Destroy();mod.Elo.Update();Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==4,"Destroy restarted jobs");
             foreach(var req in UnityEngine.Networking.UnityWebRequest.Sent)Require(req.Disposed,"Destroy leaked pending HTTP");
-            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==4,"Destroy restarted pending jobs");
         }
-        foreach(bool malformed in new[]{false,true})
-        using(var host=TestHost.Start())
-        {
-            var mod=Load(host);var p=Players(true);mod.Elo.Get(p);
-            var req=UnityEngine.Networking.UnityWebRequest.Sent[0];req.isDone=true;
-            req.isHttpError=!malformed;req.downloadHandler.text=malformed?"{broken":"";
-            for(int i=0;i<30;i++){Complete(p);mod.Elo.Update();}
-            Require(mod.Elo.Get(p)[7].Found,"Primary failure did not recover from fallback");
-            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==2 && UnityEngine.Networking.UnityWebRequest.Sent[1].url.StartsWith(EloData.FallbackBaseUrl),"Wrong fallback endpoint/count");
-        }
-        using(var host=TestHost.Start())
-        {
-            var mod=Load(host);var p=Players(true);mod.Elo.Get(p);
-            var rows=new Dictionary<string,object>{{p[0].Uid,new Dictionary<string,object>{{"rating",4500},{"sigma",100},{"dx",5}}}};
-            var first=UnityEngine.Networking.UnityWebRequest.Sent[0];first.downloadHandler.text=Json.Serialize(rows);first.isDone=true;
-            for(int i=0;i<30;i++){Complete(p);mod.Elo.Update();}
-            var result=mod.Elo.Get(p);
-            Require(result[0].Score==4500 && result[7].Score==4200,"Fallback overwrote a preferred result or failed missing UID");
-            Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==2,"Missing subset retried repeatedly");
-        }
-        Console.WriteLine("Elo concurrent pipeline checks passed: "+_checks+" (production client, offline network doubles)");
+        Console.WriteLine("Elo batch pipeline checks passed: "+_checks+" (production client, offline network doubles)");
     }
 }

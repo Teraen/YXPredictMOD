@@ -1,0 +1,11 @@
+[Unit]
+Description=Recalculate current-period character Elo every ten minutes
+
+[Timer]
+OnCalendar=*-*-* *:0/10:00 Asia/Shanghai
+AccuracySec=5s
+Persistent=true
+Unit=yx-patch-rating-study.service
+
+[Install]
+WantedBy=timers.target

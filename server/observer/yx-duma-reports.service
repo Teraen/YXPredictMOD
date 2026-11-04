@@ -1,0 +1,17 @@
+[Unit]
+Description=Recover missing final public Duma battle reports
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/yx-duma-observer/current
+ExecStart=/opt/yx-duma-observer/venv/bin/python recover_reports.py --config /etc/yx-duma-observer.json
+TimeoutStartSec=180
+UMask=0077
+StateDirectory=yx-duma-observer
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/yx-duma-observer -/var/lib/yx-replay/upstream.lock
+MemoryMax=512M

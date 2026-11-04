@@ -26,7 +26,7 @@ namespace YxPrediction
                 string code = Json.GetString(row, "code", "");
                 if (code.Length != 6) throw new FormatException("房间号无效");
                 for (int j = 0; j < code.Length; j++) if (code[j] < '0' || code[j] > '9') throw new FormatException("房间号无效");
-                browser.Rooms.Add(new PublicRoom { Code = code, HostName = Json.GetString(row, "hostName", "观众"),
+                browser.Rooms.Add(new PublicRoom { Code = code, HostName = "观众1",
                     Round = (int)Json.GetNumber(row, "round", 0), Members = (int)Json.GetNumber(row, "members", 0),
                     Available = Json.GetBool(row, "available", false), Open = Json.GetBool(row, "open", false) });
             }

@@ -10,8 +10,16 @@ from urllib.parse import quote
 
 MOD_ID = "local.yxp.predictionpoints"
 PACKAGE_NAME = "天机赌马"
+RACING_NAME = "天机赛马"
 ICONS = ("特等马", "上等马", "中等马", "牛马", "海马", "黑马", "机械马")
 ASSETS = ICONS + ("圆形遮罩",)
+
+def package_name(version):
+    return RACING_NAME if tuple(map(int, version.split('.'))) >= (0, 8, 3) else PACKAGE_NAME
+
+def asset_name_for(version):
+    prefix = 'tianji-saima-' if tuple(map(int, version.split('.'))) >= (0, 8, 3) else 'tianji-duma-'
+    return prefix + version + '.zip'
 
 
 def require(condition, message):
@@ -43,14 +51,14 @@ def verify(root, repository="Teraen/YXPredictMOD"):
     require(isinstance(title, str) and 0 < len(title) <= 200 and not any(c in title for c in "\r\n"), "Invalid release title")
     artifact = checked_file(root, meta["artifact"])
     checked_file(root, meta["notes"])
-    expected_artifact = "dist/" + PACKAGE_NAME + "-" + version + ".zip"
+    expected_artifact = "dist/" + package_name(version) + "-" + version + ".zip"
     legacy_artifact = "dist/" + MOD_ID + "-" + version + ".zip"
     legacy_version = tuple(map(int, version.split("."))) <= (0, 7, 9)
     require(meta["artifact"] == expected_artifact or (legacy_version and meta["artifact"] == legacy_artifact), "Unexpected package path")
     asset_name = meta.get("assetName", artifact.name)
     # GitHub strips Chinese from uploaded filenames; keep the local ZIP Chinese
     # and publish an ASCII transport alias with the Chinese name as its label.
-    expected_asset = "tianji-duma-" + version + ".zip"
+    expected_asset = asset_name_for(version)
     require(asset_name == expected_asset or (legacy_version and asset_name == artifact.name and asset_name.isascii()), "Unexpected release asset name")
     require(hashlib.sha256(artifact.read_bytes()).hexdigest() == meta["sha256"], "Package checksum mismatch")
     manifest = read_json(root / "mod/manifest.json")

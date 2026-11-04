@@ -119,6 +119,12 @@ namespace YxPrediction
                     Markets.RemoveAt(removable);
                 }
                 market = new Market(snapshot.Id, snapshot.Players, ratings, Odds.Rates(ratings));
+                market.UseHorseShuffle = snapshot.ShuffleHorses;
+                if (market.UseHorseShuffle)
+                {
+                    int[] shuffled = Odds.Rates(HorseShuffle.Ratings(market));
+                    for (int i = 0; i < 64; i++) market.BaseRates[i] = shuffled[i];
+                }
                 Markets.Add(market);
                 Revision++;
             }
@@ -310,7 +316,7 @@ namespace YxPrediction
             if (changed)
             {
                 int[] rates;
-                try { rates = TradingOdds.Rates(market.Ratings, states, snapshot.Round, market.ChampionOnly); }
+                try { rates = TradingOdds.Rates(HorseShuffle.Ratings(market), states, snapshot.Round, market.ChampionOnly); }
                 catch (ArgumentException ex) { market.TradingWaitReason = ex.Message; return; }
                 market.QuoteStates = states; market.QuoteRates = rates; market.QuoteRound = snapshot.Round; TradingChange(market);
             }

@@ -39,7 +39,7 @@ internal static partial class Program
         Check("public room list decoding and trade access follow current observed UID", delegate
         {
             var list = RoomBrowser.Read(Json.ParseObject("{\"page\":0,\"total\":1,\"rooms\":[{\"code\":\"123456\",\"hostName\":\"甲\",\"round\":9,\"members\":2,\"available\":true,\"open\":true}]}"));
-            Equal(list.Rooms.Count, 1); Throws(delegate { RoomBrowser.Read(Json.ParseObject("{\"rooms\":[{\"code\":\"abc123\"}]}")); });
+            Equal(list.Rooms.Count, 1); Equal(list.Rooms[0].HostName, "观众1"); Throws(delegate { RoomBrowser.Read(Json.ParseObject("{\"rooms\":[{\"code\":\"abc123\"}]}")); });
             MatchSnapshot s = Snapshot(9); var room = new RoomState { GameId = s.Id, Round = 9, Open = true };
             for (int i = 0; i < 8; i++) room.Uids[i] = s.Players[i].Uid;
             Array.Reverse(s.Players); Array.Reverse(s.States); True(BettingAccess.CanTrade(room, s, 0));

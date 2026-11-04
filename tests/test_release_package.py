@@ -88,19 +88,19 @@ class ReleasePackageTests(unittest.TestCase):
         manifest = RELEASE.read_json(self.root / "mod/manifest.json")
         manifest["version"] = version
         self.write_json("mod/manifest.json", manifest)
-        self.meta.update(version=version, tag="v" + version, title="v" + version + " naming check", assetName="tianji-duma-" + version + ".zip")
+        self.meta.update(version=version, tag="v" + version, title="v" + version + " naming check", assetName=RELEASE.asset_name_for(version))
         self.write_json(".github/releases/latest.json", self.meta)
         catalog = RELEASE.read_json(self.root / "mods.json")
         catalog["mods"][0]["version"] = version
         self.write_json("mods.json", catalog)
         manifest_bytes = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
         self.rewrite_archive(lambda entries: [(name, manifest_bytes if name == RELEASE.MOD_ID + "/manifest.json" else data) for name, data in entries])
-        self.rename_package(RELEASE.PACKAGE_NAME + "-" + version + ".zip")
+        self.rename_package(RELEASE.package_name(version) + "-" + version + ".zip")
 
     def test_friendly_package_name_preserves_the_internal_mod_id(self):
-        self.rename_package(RELEASE.PACKAGE_NAME + "-" + self.meta["version"] + ".zip")
+        self.rename_package(RELEASE.package_name(self.meta["version"]) + "-" + self.meta["version"] + ".zip")
         result = RELEASE.verify(self.root)
-        self.assertEqual(result["name"], RELEASE.PACKAGE_NAME + "-" + self.meta["version"] + ".zip")
+        self.assertEqual(result["name"], RELEASE.package_name(self.meta["version"]) + "-" + self.meta["version"] + ".zip")
         with zipfile.ZipFile(self.root / self.meta["artifact"]) as archive:
             self.assertTrue(all(name.startswith(RELEASE.MOD_ID + "/") for name in archive.namelist()))
 
@@ -109,6 +109,16 @@ class ReleasePackageTests(unittest.TestCase):
         self.assertEqual(RELEASE.verify(self.root)["name"], RELEASE.PACKAGE_NAME + "-0.7.10.zip")
         self.rename_package(RELEASE.MOD_ID + "-0.7.10.zip")
         with self.assertRaisesRegex(ValueError, "Unexpected package path"):
+            RELEASE.verify(self.root)
+
+    def test_racing_release_uses_the_new_name_and_alias_without_renaming_historical_releases(self):
+        self.promote_version('0.8.3')
+        result = RELEASE.verify(self.root)
+        self.assertEqual(result['name'], '天机赛马-0.8.3.zip')
+        self.assertEqual(result['assetName'], 'tianji-saima-0.8.3.zip')
+        self.meta['assetName'] = 'tianji-duma-0.8.3.zip'
+        self.write_json('.github/releases/latest.json', self.meta)
+        with self.assertRaisesRegex(ValueError, 'Unexpected release asset name'):
             RELEASE.verify(self.root)
 
     def test_github_alias_keeps_the_local_chinese_name_and_matches_the_download(self):

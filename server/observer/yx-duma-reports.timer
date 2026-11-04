@@ -1,0 +1,10 @@
+[Unit]
+Description=Retry incomplete final public Duma reports
+
+[Timer]
+OnBootSec=20
+OnUnitInactiveSec=20
+Unit=yx-duma-reports.service
+
+[Install]
+WantedBy=timers.target

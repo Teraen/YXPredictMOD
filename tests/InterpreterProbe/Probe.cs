@@ -1,12 +1,24 @@
 using System;
+using System.Collections.Generic;
 using Yx.Shared;
 
 namespace YxPrediction
 {
     public static class InterpreterProbe
     {
+        public sealed class PublicTableFixture { public List<int> usedCards = new List<int>(); }
+        static void PublicTableFlow()
+        {
+            var table = new PublicTableFixture(); table.usedCards.Add(1000011); table.usedCards.Add(0); table.usedCards.Add(1000021);
+            var field = typeof(PublicTableFixture).GetField("usedCards");
+            int[] cards = PublicCardSequence.Copy(field.GetValue(table));
+            if (cards == null || cards.Length != 3 || cards[0] != 1000011 || cards[1] != 0 || cards[2] != 1000021) throw new Exception("Public table reflection/CLR collection bridge failed");
+            cards[0] = 1; if (table.usedCards[0] != 1000011) throw new Exception("Public table copy mutated native collection");
+            if (PublicCardSequence.Copy(new object[] { "private" }) != null) throw new Exception("Invalid table accepted");
+        }
         public static string Run()
         {
+            PublicTableFlow();
             var ratings = new Rating[8];
             var players = new Player[8];
             for (int i = 0; i < 8; i++)
@@ -14,6 +26,16 @@ namespace YxPrediction
                 ratings[i] = new Rating(4400 - i * 160, 150, true);
                 players[i] = new Player("player" + i.ToString(System.Globalization.CultureInfo.InvariantCulture), "player", false);
             }
+            var shuffled = new MatchSnapshot { Id = "probe-shuffle", Round = 1, LiveObserver = true, TradingOpen = true, Players = players, ShuffleHorses = true, States = new PlayerState[8] };
+            for (int i = 0; i < 8; i++) shuffled.States[i] = new PlayerState(100, 0, 0, 0);
+            var shuffledBook = new PredictionBook(1000); Market shuffledMarket = shuffledBook.Observe(shuffled, ratings);
+            int shuffledRate = shuffledMarket.QuoteRates[0], moved = 0; int[] sourceSlots = HorseShuffle.Sources(shuffled.Id, players);
+            for (int i = 0; i < 8; i++) if (sourceSlots[i] != i) moved++;
+            if (moved != 2 && moved != 3) throw new Exception("Shuffle cycle failed");
+            if (shuffledBook.Buy(shuffled, players[0].Uid, 1, 37, shuffledMarket.TradeVersion) != null) throw new Exception("Shuffled purchase failed");
+            shuffledBook = BookCodec.Read(Json.ParseObject(Json.Serialize(BookCodec.Write(shuffledBook))));
+            if (!shuffledBook.Find(shuffled.Id).UseHorseShuffle || shuffledBook.Find(shuffled.Id).QuoteRates[0] != shuffledRate || shuffledBook.Balance != 963) throw new Exception("Shuffle persistence changed odds or funds");
+            if (HorseShuffle.Titles(shuffledBook.Find(shuffled.Id)).Length != 8) throw new Exception("Shuffled titles missing");
             var snapshot = new MatchSnapshot { Id = "probe", Round = 2, LiveObserver = true, Players = players };
             var book = new PredictionBook(1000);
             book.Markets.Add(new Market(snapshot.Id, players, ratings, Odds.Rates(ratings, 2), 2));

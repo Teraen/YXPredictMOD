@@ -1,6 +1,7 @@
 #if YX_GAME
 using System;
 using System.Globalization;
+using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 using Yx.ModSdk;
@@ -20,6 +21,12 @@ namespace YxPrediction
         int _resultsThroughRound, _completeResultsThroughRound;
         float _nextPoll;
         int _eloRevision;
+        Proto.BattleResult _priorPublicResult;
+        Proto.AllBattleResults _priorPublicAll, _priorPublicPrevious;
+        static readonly Dictionary<string, string> _publicCardNames = new Dictionary<string, string>();
+        // The public protocol field is read as an object to avoid introducing a new
+        // value-type generic reference in hot code. Only this public table is read.
+        static readonly FieldInfo PublicUsedCards = typeof(Proto.BattlePlayerLastRoundData).GetField("usedCards", BindingFlags.Instance | BindingFlags.Public);
         public GameBridge(PredictionMod mod, ModContext ctx) { _mod = mod; _ctx = ctx; _elo = new EloClient(ctx); }
         public HorseProfile[] HorseProfiles(Player[] players) { return _elo.GetHorseProfiles(players); }
 
@@ -226,6 +233,65 @@ namespace YxPrediction
         {
             if (_resultMatchId == id) return;
             _resultMatchId = id; _resultsThroughRound = 0; _completeResultsThroughRound = 0;
+            var manager = BattleManager.Instance;
+            _priorPublicResult = BattleManager.currentBattleResult;
+            _priorPublicAll = manager == null ? null : manager.currentAllBattleResults;
+            _priorPublicPrevious = manager == null ? null : manager.previousAllBattleResults;
+        }
+
+        static int[] PublicCards(Proto.BattlePlayerLastRoundData data)
+        {
+            if (data == null || PublicUsedCards == null) return null;
+            return PublicCardSequence.Copy(PublicUsedCards.GetValue(data));
+        }
+        static string[] PublicCardNames(int[] cards)
+        {
+            if (cards == null) return null;
+            var names = new string[cards.Length];
+            for (int i = 0; i < cards.Length; i++)
+            {
+                string key = cards[i].ToString(CultureInfo.InvariantCulture), name;
+                if (!_publicCardNames.TryGetValue(key, out name))
+                {
+                    try { var config = CardFactory.FindCardConfig(cards[i]); name = config == null ? "" : config.name ?? ""; }
+                    catch { name = ""; }
+                    if (name.Length > 80) name = name.Substring(0, 80);
+                    if (_publicCardNames.Count > 2048) _publicCardNames.Clear();
+                    _publicCardNames[key] = name;
+                }
+                names[i] = name;
+            }
+            return names;
+        }
+        static void AddPublicBattle(List<PublicBattle> target, Proto.BattleResult battle, MatchSnapshot snapshot)
+        {
+            if (!Matches(battle, snapshot) || battle.round > snapshot.Round || battle.round < snapshot.Round - 1 || target.Count >= 16) return;
+            var first = battle.p1.publicData; var second = battle.p2.publicData;
+            for (int i = 0; i < target.Count; i++)
+                if (target[i].Round == battle.round && target[i].FirstUid == first.uid && target[i].SecondUid == second.uid
+                    && target[i].FirstMirror == first.isMirror && target[i].SecondMirror == second.isMirror) return;
+            int[] firstCards = PublicCards(first.lastRoundData);
+            int[] secondCards = PublicCards(second.lastRoundData);
+            target.Add(new PublicBattle { Round = battle.round, FirstUid = first.uid, SecondUid = second.uid,
+                WinnerUid = battle.winerId == first.uid || battle.winerId == second.uid ? battle.winerId : "",
+                FirstCards = firstCards, SecondCards = secondCards, FirstNames = PublicCardNames(firstCards), SecondNames = PublicCardNames(secondCards),
+                FirstLife = first.life, SecondLife = second.life, FirstMirror = first.isMirror, SecondMirror = second.isMirror });
+        }
+        void PublicBattles(MatchSnapshot snapshot, Proto.GameStatus status)
+        {
+            var manager = BattleManager.Instance;
+            if (!snapshot.LiveObserver || manager == null || manager.currentGameStatus == null
+                || manager.currentGameStatus.codeId != status.codeId || manager.currentGameStatus.beginTs != status.beginTs) return;
+            var rows = new List<PublicBattle>();
+            Proto.AllBattleResults all = manager.currentAllBattleResults;
+            if (all != null && all != _priorPublicAll && all.battleResults != null)
+                for (int i = 0; i < all.battleResults.Count && i < 16; i++) AddPublicBattle(rows, all.battleResults[i], snapshot);
+            all = manager.previousAllBattleResults;
+            if (all != null && all != _priorPublicPrevious && all != _priorPublicAll && all.battleResults != null)
+                for (int i = 0; i < all.battleResults.Count && i < 16; i++) AddPublicBattle(rows, all.battleResults[i], snapshot);
+            var one = BattleManager.currentBattleResult;
+            if (one != _priorPublicResult) AddPublicBattle(rows, one, snapshot);
+            snapshot.PublicBattles = rows.ToArray();
         }
 
         static bool Matches(Proto.BattleResult result, MatchSnapshot snapshot)
@@ -253,6 +319,7 @@ namespace YxPrediction
             }
             _mod.ObserveLocation(snapshot.Id);
             TrackMatch(snapshot.Id);
+            PublicBattles(snapshot, status);
             BattleManager currentManager = BattleManager.Instance;
             if (currentManager != null)
             {
@@ -351,7 +418,7 @@ namespace YxPrediction
             {
                 Id = id, Round = status.round, LiveObserver = observer,
                 Ended = status.isEnded, FifthRoundEnded = status.round >= 6,
-                Players = players, Ranks = ranks, States = states, TradingOpen = trading, FocusedUid = FocusUid(manager, status), RemainingSwaps = swaps, EliminationRounds = eliminationRounds
+                Players = players, Ranks = ranks, States = states, TradingOpen = trading, FocusedUid = FocusUid(manager, status), RemainingSwaps = swaps, EliminationRounds = eliminationRounds, ShuffleHorses = true
             };
         }
 

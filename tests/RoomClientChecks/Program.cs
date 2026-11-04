@@ -261,6 +261,11 @@ internal static class Program
             }
             Require(confirm&&dismiss,"Popup confirmation is not wired to dismissal");
             var panel=module.GetType("YxPrediction.RoomPanel");foreach(var method in panel.Methods)if(method.Name=="Update")Require(Calls(method,"DisplayOrder")&&Calls(method,"SetSlot"),"Purchased-first order disconnected");
+            foreach(var method in panel.Methods)
+            {
+                if(method.Name=="Build")Require(Calls(method,"WebLink"),"Overview toolbar is missing direct web binding");
+                if(method.Name=="ShowConnectionMenu")Require(Calls(method,"BackChoices")&&!Calls(method,"ShowJoin"),"Room menu still hides binding behind the join form");
+            }
             foreach(var nested in panel.NestedTypes)if(nested.Name=="Row")foreach(var method in nested.Methods)if(method.Name=="Refresh")Require(Calls(method,"CanTrade"),"Overview does not enforce betting access");
         }
         Console.WriteLine("PASS production final-event capture, shared selection and purchased-first UI bindings");
@@ -268,6 +273,8 @@ internal static class Program
     static void Main(string[] args)
     {
         if(args.Length>0){Bindings(args[0]);return;}
+        AnonymousMembers();Console.WriteLine("PASS room arrivals anonymize legacy names and UIDs without exposing internal arrival IDs");
+        PublicFeedWire();Console.WriteLine("PASS live public table wire preserves cards, names, mirror and winner without private hands");
         CohortTransport();Console.WriteLine("PASS cohort rounds and complete-result evidence survive host transport, retries and interval UI decoding");
         DepartureDelivery();Console.WriteLine("PASS departure requires matching acknowledgement, retries durably and notifies actual relief");
         DepartureReloadIsolation();Console.WriteLine("PASS departure queue survives reload without leaking credentials or notices to another service");
@@ -285,6 +292,31 @@ internal static class Program
         BrowserAndBinding();Console.WriteLine("PASS public listing, expiring binding code, protocol and cutoff/exited order guards");
         MigratedDeparture();Console.WriteLine("PASS original-domain departure receipts apply once to the migrated identity");
         DomainMigration();Console.WriteLine("PASS default domain migration retains room token, receipt and pending operation");
+    }
+    static void AnonymousMembers()
+    {
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);var data=View();var members=new List<object>();
+            data["memberDetails"]=members;
+            members.Add(new Dictionary<string,object>{{"id","arrival-one"},{"name","private-first-name"},{"uid","private-first-uid"}});
+            var observe=typeof(RoomClient).GetMethod("ObserveMembers",BindingFlags.Instance|BindingFlags.NonPublic);
+            observe.Invoke(mod.Client,new object[]{RoomState.Read(data)});Require(mod.Client.JoinNotice==null,"Initial members were announced");
+            members.Add(new Dictionary<string,object>{{"id","arrival-two"},{"name","private-second-name"},{"uid","private-second-uid"}});
+            var state=RoomState.Read(data);observe.Invoke(mod.Client,new object[]{state});
+            Require(mod.Client.JoinNotice=="观众2 加入房间","Legacy member identity appeared in arrival notice");
+            observe.Invoke(mod.Client,new object[]{state});Require(state.MemberNames[0]=="观众1"&&state.MemberNames[1]=="观众2","Legacy real member names retained");
+        }
+    }
+    static void PublicFeedWire()
+    {
+        var snapshot=Snapshot(false);snapshot.PublicBattles=new PublicBattle[] {new PublicBattle {Round=9,FirstUid=snapshot.Players[0].Uid,SecondUid=snapshot.Players[1].Uid,
+            WinnerUid=snapshot.Players[0].Uid,FirstCards=new int[] {1000011,0},SecondCards=null,FirstNames=new string[] {"云舞诀",""},SecondNames=null,FirstLife=100,SecondLife=80,FirstMirror=false,SecondMirror=true}};
+        var wire=Json.ParseObject(Json.Serialize(RoomClient.Snapshot(snapshot)));var rows=Json.GetArray(wire,"battles");
+        Require(rows!=null&&rows.Count==1,"Public battle missing from actual client snapshot");var row=(Dictionary<string,object>)rows[0];
+        Require(Json.GetString(row,"winner","")==snapshot.Players[0].Uid&&Json.GetBool(row,"secondMirror",false),"Winner or mirror lost");
+        Require(Json.GetArray(row,"firstCards").Count==2&&Json.GetArray(row,"firstNames")[0] as string=="云舞诀","Table names or slots lost");
+        Require(!row.ContainsKey("handCards")&&!row.ContainsKey("privateData"),"Private data leaked into public feed");
     }
     static void ReliefReceipts()
     {
@@ -342,7 +374,7 @@ internal static class Program
         using(var host=TestHost.Start())
         {
             var mod=Setup(host);mod.Snapshot.Round=10;mod.Client.Trade("buy",0,1,10);Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==0,"Round ten sent an order");
-            mod.Client.FetchRooms(1);Require((string)Last.Body["action"]=="list"&&Json.GetNumber(Last.Body,"page",0)==1&&Json.GetNumber(Last.Body,"protocol",0)==3,"List request missing protocol/page");
+            mod.Client.FetchRooms(1);Require((string)Last.Body["action"]=="list"&&Json.GetNumber(Last.Body,"page",0)==1&&Json.GetNumber(Last.Body,"protocol",0)==4,"List request missing protocol/page");
             Last.isDone=true;Last.downloadHandler.text="{\"ok\":true,\"data\":{\"page\":1,\"total\":7,\"rooms\":[{\"code\":\"654321\",\"hostName\":\"甲\",\"available\":true}]}}";
             mod.Client.Update();Require(mod.Client.Browser.Rooms[0].Code=="654321","List response not parsed");
             mod.Client.CreateWebCode();Require((string)Last.Body["action"]=="linkCode","Binding request missing");
@@ -350,6 +382,20 @@ internal static class Program
             Require(UnityEngine.GUIUtility.systemCopyBuffer=="TP-1234567890","Code not copied");int count=UnityEngine.Networking.UnityWebRequest.Sent.Count;
             mod.Client.CreateWebCode();Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==count,"Fresh code was needlessly regenerated");
             UnityEngine.Time.unscaledTime=301;mod.Client.CreateWebCode();Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==count+1,"Expired code reused");
+            Require(mod.Client.WebCodePending&&!mod.Client.WebCodeAvailable,"Code request state missing");
+            Last.isDone=true;Last.downloadHandler.text="{\"ok\":true,\"data\":{\"code\":\"TP-ABCDEF1234\"}}";mod.Client.Update();
+            mod.Client.FetchRooms(0);int busyCount=UnityEngine.Networking.UnityWebRequest.Sent.Count;UnityEngine.GUIUtility.systemCopyBuffer="";
+            mod.Client.CreateWebCode();Require(UnityEngine.GUIUtility.systemCopyBuffer=="TP-ABCDEF1234"&&UnityEngine.Networking.UnityWebRequest.Sent.Count==busyCount,"Valid code could not be copied during polling");
+            UnityEngine.Time.unscaledTime=601;mod.Client.CreateWebCode();Require(mod.Client.WebCodePending&&UnityEngine.Networking.UnityWebRequest.Sent.Count==busyCount,"Busy binding request was dropped or interrupted polling");
+            Last.isDone=true;Last.downloadHandler.text="{\"ok\":true,\"data\":{\"page\":0,\"total\":0,\"rooms\":[]}}";mod.Client.Update();mod.Client.Update();
+            Require((string)Last.Body["action"]=="linkCode"&&UnityEngine.Networking.UnityWebRequest.Sent.Count==busyCount+1,"Queued binding did not run after polling");
+        }
+        using(var host=TestHost.Start())
+        {
+            var mod=Setup(host);Set(mod.Client,"_token",null);Set(mod.Client,"_code",null);mod.Client.CreateWebCode();
+            Require((string)Last.Body["action"]=="register"&&mod.Client.WebCodePending,"Binding registration did not start");
+            Complete(true);mod.Client.Update();Require(!mod.Client.WebCodePending,"Failed registration left binding stuck loading");
+            int count=UnityEngine.Networking.UnityWebRequest.Sent.Count;mod.Client.CreateWebCode();Require(UnityEngine.Networking.UnityWebRequest.Sent.Count==count+1,"Binding registration could not retry");
         }
     }
     static void MigratedDeparture()

@@ -14,13 +14,15 @@ namespace YxPrediction
         public long ReliefCount;
         public bool ReliefRequiresNoPendingBets;
         public string Code, GameId;
-        public string[] MemberIds = new string[0], MemberNames = new string[0], MemberUids = new string[0];
+        public string[] MemberIds = new string[0], MemberNames = new string[0];
         public bool Host, Open, Settled, Forfeited, TradingClosed;
         public int Version, Round, Members, Rules;
         public int[] BaseRates=new int[64], QuoteRates=new int[64], Factors=new int[64];
         public long[] Claims=new long[8], FinalPayouts=new long[8];
         public long Balance, Payout;
         public readonly string[] Uids = new string[8], Names = new string[8];
+        public string[] HorseTitles;
+        public bool HorseShuffle;
         public readonly int[] Ranks = new int[8], MyRanks = new int[8], RankMinimum = new int[8], RankMaximum = new int[8];
         public string ResultPlace(int player)
         {
@@ -43,6 +45,19 @@ namespace YxPrediction
             r.Code = Json.GetString(d, "code", ""); r.GameId = Json.GetString(d, "gameId", "");
             r.Host = Json.GetBool(d, "host", false); r.Open = Json.GetBool(d, "open", false); r.Settled = Json.GetBool(d, "settled", false);
             r.AllowMatch = Json.GetBool(d, "allowMatch", true);
+            r.HorseShuffle = Json.GetBool(d, "horseShuffle", false);
+            var titles = Json.GetArray(d, "horseTitles");
+            if (titles != null)
+            {
+                if (titles.Count != 8) throw new FormatException("马匹称号维度错误");
+                r.HorseTitles = new string[8];
+                for (int i = 0; i < 8; i++)
+                {
+                    string title = titles[i] as string;
+                    if (title == null || title.Length > 40) throw new FormatException("马匹称号格式错误");
+                    r.HorseTitles[i] = title;
+                }
+            }
             r.IsPublic = Json.GetBool(d, "isPublic", r.AllowMatch);
             r.ReliefAmount = (int)Json.GetNumber(d, "reliefAmount", 0);
             r.ReliefCount = (long)Json.GetNumber(d, "reliefCount", 0);
@@ -62,8 +77,8 @@ namespace YxPrediction
             if (members != null)
             {
                 if (members.Count > 32) throw new FormatException("房间成员数量无效");
-                r.MemberIds = new string[members.Count]; r.MemberNames = new string[members.Count]; r.MemberUids = new string[members.Count];
-                for(int i=0;i<members.Count;i++) { var member=members[i] as Dictionary<string,object>; r.MemberIds[i]=Json.GetString(member,"id",""); r.MemberNames[i]=Json.GetString(member,"name",""); r.MemberUids[i]=Json.GetString(member,"uid",""); }
+                r.MemberIds = new string[members.Count]; r.MemberNames = new string[members.Count];
+                for(int i=0;i<members.Count;i++) { var member=members[i] as Dictionary<string,object>; r.MemberIds[i]=Json.GetString(member,"id",""); r.MemberNames[i]="观众"+(i+1).ToString(CultureInfo.InvariantCulture); }
             }
             var players = d["players"] as List<object>; var ranks = d["ranks"] as List<object>;
             var active = Json.GetArray(d, "active");

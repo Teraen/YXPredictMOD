@@ -18,7 +18,9 @@ try {
     Invoke-Dotnet run --project tests/PredictionChecks.csproj --no-build -- --rule-parity .cache/single-player-parity.json
     $parityHash = (Get-FileHash '.cache/single-player-parity.json').Hash
     if ($parityHash -ne (Get-FileHash 'server/fixtures/single-player-parity.json').Hash) { throw '单人规则对照数据发生变化，请重新生成并审核服务端对照测试。' }
-    & node --test server/rooms.test.mjs server/rules.test.mjs server/champion.test.mjs server/web.test.mjs server/auth.test.mjs
+    Invoke-Dotnet run --project tests/PredictionChecks.csproj --no-build -- --observer-quotes .cache/observer-quotes.json
+    if ((Get-FileHash '.cache/observer-quotes.json').Hash -ne (Get-FileHash 'server/observer/fixtures/quotes.json').Hash) { throw '整点观战报价对照数据发生变化，请审核Python与C#规则是否一致。' }
+    & node --test server/rooms.test.mjs server/rules.test.mjs server/champion.test.mjs server/cashout.test.mjs server/web.test.mjs server/auth.test.mjs server/spectate.test.mjs server/hourly.test.mjs server/qq-wallet.test.mjs server/public-build.test.mjs server/wallet-commands.test.mjs server/racing-registration.test.mjs
     if ($LASTEXITCODE -ne 0) { throw '联机规则对照失败。' }
     Invoke-Dotnet run --project tests/GameEntryChecks/GameEntryChecks.csproj
     Invoke-Dotnet run --project tests/HorseHoverChecks/HorseHoverChecks.csproj

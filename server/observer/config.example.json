@@ -1,0 +1,11 @@
+{
+  "backend": "https://duma.kaigua.vip",
+  "key": "REPLACE_WITH_DEDICATED_OBSERVER_KEY",
+  "tokenCache": "/srv/game-observer/token.json",
+  "lockDirectory": "/var/lib/yx-replay",
+  "cardNames": "/var/lib/yx-duma-observer/card-names.json",
+  "buildCatalog": "/var/lib/yx-duma-observer/build-catalog.json",
+  "replayStore": "/var/lib/yx-replay/rank-identities.sqlite3",
+  "archiveCache": "/var/lib/yx-duma-observer/public-records",
+  "archiveBridge": "/srv/replay-api"
+}

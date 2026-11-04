@@ -22,7 +22,7 @@ test('binding requires one-time possession, cannot steal an owner and survives r
  assert.throws(()=>x.web.bind(x.user,'TP-0000000000'));assert.equal(x.web.bind(x.user,code).linked,true);assert.throws(()=>x.web.bind(x.user,code));
  const code2=x.web.issueCode(x.key).code;assert.throws(()=>x.web.bind({...x.user,subject:other},code2));assert.equal(x.rooms.state.accounts[x.key].webOwner,subject);
  const reloaded=new PredictionWeb(new Rooms(structuredClone(x.rooms.state)),{bridgeKey});assert.equal(reloaded.me(x.user).accounts,1);
- const key=x.rooms.register('第二账户').token;x.web.bind(x.user,x.web.issueCode(key).code);assert.equal(x.web.me(x.user).balance,2000);
+ const key=x.rooms.register('第二账户').token;x.web.bind(x.user,x.web.issueCode(key).code);assert.equal(x.web.me(x.user).balance,2000);assert.equal(x.web.playKey(x.user),x.key);
 });
 test('daily check-in adds 200 to the bound betting account once per China day and never inflates profit',()=>{
  const x=setup();assert.throws(()=>x.web.checkIn(x.user));x.web.bind(x.user,x.web.issueCode(x.key).code);

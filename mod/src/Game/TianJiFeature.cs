@@ -154,11 +154,9 @@ namespace YxPrediction
         {
             if (member == null) return "";
             if (member.IsAi) return member.Title + " · " + member.Explanation;
-            if (member.Profile == null || !member.Profile.Rating.Found) return "暂无公开Elo，不参与称号评定";
+            if (!member.AllocatedTier && (member.Profile == null || !member.Profile.Rating.Found)) return "暂无公开Elo，不参与称号评定";
             string text = member.Caption + " · " + member.Explanation;
-            if (member.Profile.DaoXinGames >= 0) text += " · 道心对局 " + PredictionMod.N(member.Profile.DaoXinGames) + "场";
-            string tag = RankScoreTag(uid);
-            if (!string.IsNullOrEmpty(tag)) text += " · " + tag;
+            if (member.Profile != null && member.Profile.DaoXinGames >= 0) text += " · 道心对局 " + PredictionMod.N(member.Profile.DaoXinGames) + "场";
             return text;
         }
 
@@ -179,7 +177,18 @@ namespace YxPrediction
                         ClearPlates(); _scores = null; _scoreMatchId = snapshot.Id;
                         if (Time.unscaledTime - _pendingAt <= 60 && SamePlayers(snapshot, _pendingScores)) _scores = _pendingScores;
                     }
-                    Roster.Observe(snapshot, _bridge.HorseProfiles(snapshot.Players));
+                    RoomState online = _mod.Online == null ? null : _mod.Online.State;
+                    Market market = _mod.Current != null && _mod.Current.Id == snapshot.Id ? _mod.Current : null;
+                    bool shuffled = online != null && online.GameId == snapshot.Id ? online.HorseShuffle : market != null ? market.UseHorseShuffle : snapshot.ShuffleHorses;
+                    HorseProfile[] profiles = _bridge.HorseProfiles(snapshot.Players);
+                    if (market != null && profiles != null)
+                        for (int i = 0; i < 8; i++)
+                        {
+                            HorseProfile profile = profiles[i];
+                            profiles[i] = new HorseProfile(market.Ratings[market.FindPlayer(snapshot.Players[i].Uid)], profile.DaoXinGames, profile.Games, profile.Spinning);
+                        }
+                    Roster.Observe(snapshot, profiles, shuffled);
+                    Roster.RoomTitles(online != null && online.GameId == snapshot.Id ? online.Uids : null, online != null && online.GameId == snapshot.Id ? online.HorseTitles : null);
                     RefreshPlates();
                 }
                 UpdateIcons(snapshot);

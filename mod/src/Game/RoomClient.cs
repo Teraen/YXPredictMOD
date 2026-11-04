@@ -45,10 +45,14 @@ namespace YxPrediction
         public RoomBrowser Browser { get; private set; }
         public string WebCode { get; private set; }
         float _webCodeUntil;
+        bool _webCodeRequested;
+        public bool WebCodeAvailable { get { return !string.IsNullOrEmpty(WebCode) && Time.unscaledTime < _webCodeUntil; } }
+        public bool WebCodePending { get { return _webCodeRequested || _afterRegister == "linkCode" || (_request != null && Json.GetString(_sent, "action", "") == "linkCode"); } }
         public void CreateWebCode()
         {
-            if (Busy) return;
-            if (!string.IsNullOrEmpty(WebCode) && Time.unscaledTime < _webCodeUntil) { GUIUtility.systemCopyBuffer = WebCode; Message = "绑定码已复制；请在生成后5分钟内到 https://duma.kaigua.vip 登录并绑定"; return; }
+            if (WebCodeAvailable) { GUIUtility.systemCopyBuffer = WebCode; Message = "绑定码已复制；请在生成后5分钟内到 https://duma.kaigua.vip 登录并绑定"; return; }
+            if (Busy) { _webCodeRequested = true; Message = "当前请求完成后自动生成网页绑定码…"; return; }
+            _webCodeRequested = false; Message = "正在生成网页绑定码…";
             _afterRegister = "linkCode";
             if (string.IsNullOrEmpty(_token)) { var register=Body("register");register["name"]=_name.Value;Send(register); }
             else ConnectReady();
@@ -102,7 +106,7 @@ namespace YxPrediction
         public void SetMessage(string message) { Message = message; }
         void ReadIdentity()
         {
-            WebCode = null; _webCodeUntil = 0;
+            WebCode = null; _webCodeUntil = 0; _webCodeRequested = false;
             _endpoint = _url.Value.Trim().TrimEnd('/');
             _reliefSeen = 0;
             var saved = _ctx.Data.Get<Dictionary<string, object>>("room.identity.v1", null);
@@ -222,21 +226,48 @@ namespace YxPrediction
             // 结束快照可从旧账本恢复；不能拿当前观战的原生房间ID标记旧对局。
             d["gameRoomId"] = s.Ended ? "" : NativeRoomSpectate.CurrentRoomId();
             d["closedThrough"] = s.ResultsThroughRound; d["open"] = s.TradingOpen && s.LiveObserver; d["ended"] = s.Ended;
-            var players = new List<object>(); var ranks = new List<object>(); var active = new List<object>();
+            var players = new List<object>(); var ranks = new List<object>(); var active = new List<object>(); var states = new List<object>();
             for (int i = 0; i < 8; i++)
             {
                 var p = new Dictionary<string, object>(); p["uid"] = s.Players[i].Uid; p["name"] = s.Players[i].Name; players.Add(p);
                 int rank = s.Ended ? s.Ranks[i] : s.States != null && s.States[i] != null && s.States[i].Life <= 0 ? s.States[i].FinalRank : 0;
                 ranks.Add(rank >= 1 && rank <= 8 ? rank : 0);
                 active.Add(!s.Ended && s.States != null && s.States.Length == 8 && s.States[i] != null && s.States[i].Life > 0);
+                PlayerState state = s.States != null && s.States.Length == 8 ? s.States[i] : null;
+                if (state == null) states.Add(null);
+                else { var item = new Dictionary<string, object>(); item["life"] = state.Life; item["wins"] = state.Wins; item["losses"] = state.Losses; states.Add(item); }
             }
-            d["active"] = active; d["players"] = players; d["ranks"] = ranks;
+            d["players"] = players; d["ranks"] = ranks; d["active"] = active; d["states"] = states;
+            if (s.PublicBattles != null)
+            {
+                var battles = new List<object>();
+                for (int i = 0; i < s.PublicBattles.Length && i < 16; i++)
+                {
+                    PublicBattle b = s.PublicBattles[i]; if (b == null) continue;
+                    var row = new Dictionary<string, object>(); row["round"] = b.Round; row["first"] = b.FirstUid; row["second"] = b.SecondUid;
+                    row["winner"] = b.WinnerUid ?? ""; row["firstCards"] = CardIds(b.FirstCards); row["secondCards"] = CardIds(b.SecondCards);
+                    row["firstNames"] = CardNames(b.FirstNames); row["secondNames"] = CardNames(b.SecondNames);
+                    row["firstLife"] = b.FirstLife; row["secondLife"] = b.SecondLife; row["firstMirror"] = b.FirstMirror; row["secondMirror"] = b.SecondMirror;
+                    battles.Add(row);
+                }
+                d["battles"] = battles;
+            }
             if (s.EliminationRounds != null && s.EliminationRounds.Length == 8)
             {
                 var rounds = new List<object>(); for (int i = 0; i < 8; i++) rounds.Add(s.EliminationRounds[i]);
                 d["eliminationRounds"] = rounds; d["roundComplete"] = s.Ended || s.TradingOpen || s.RoundResultsComplete;
             }
             return d;
+        }
+        static List<object> CardIds(int[] cards)
+        {
+            if (cards == null) return null;
+            var result = new List<object>(); for (int i = 0; i < cards.Length; i++) result.Add(cards[i]); return result;
+        }
+        static List<object> CardNames(string[] names)
+        {
+            if (names == null) return null;
+            var result = new List<object>(); for (int i = 0; i < names.Length; i++) result.Add(names[i] ?? ""); return result;
         }
         Dictionary<string, object> Body(string action) { var d = new Dictionary<string, object>(); d["action"] = action; if (!string.IsNullOrEmpty(_code)) d["code"] = _code; return d; }
         public bool Create(bool allowMatch, string expectedNative, bool isPublic = true)
@@ -290,6 +321,12 @@ namespace YxPrediction
         {
             var data=Snapshot(snapshot);Market market=_mod.Current;
             if(market!=null&&market.QuoteRates!=null){var rates=new List<object>();for(int i=0;i<snapshot.Players.Length;i++){int at=market.FindPlayer(snapshot.Players[i].Uid);for(int rank=0;rank<8;rank++)rates.Add(market.QuoteRates[at*8+rank]);}data["baseRates"]=rates;data["open"]=snapshot.LiveObserver&&market.TradingWindowOpen;}
+            if (market != null)
+            {
+                string[] sourceTitles = HorseShuffle.Titles(market); var titles = new List<object>();
+                for (int i = 0; i < 8; i++) titles.Add(sourceTitles[market.FindPlayer(snapshot.Players[i].Uid)]);
+                data["horseTitles"] = titles; data["horseShuffle"] = market.UseHorseShuffle;
+            }
             return data;
         }
         void ConnectReady()
@@ -338,7 +375,7 @@ namespace YxPrediction
         }
         void Send(Dictionary<string, object> body, string server = null, string credential = null)
         {
-            body["protocol"] = 3;
+            body["protocol"] = 4;
             if (server == null && !string.IsNullOrEmpty(_token) && !string.IsNullOrEmpty(GameClientUtil.uid))
             {
                 var identity = new Dictionary<string, object>();
@@ -373,7 +410,7 @@ namespace YxPrediction
             {
                 if (_seenMembers.Contains(state.MemberIds[i])) continue;
                 _seenMembers.Add(state.MemberIds[i]);
-                string name = state.MemberNames[i] + "（ID " + (string.IsNullOrEmpty(state.MemberUids[i]) ? state.MemberIds[i] : state.MemberUids[i]) + "）";
+                string name = state.MemberNames[i];
                 if (!first) notice += (notice.Length > 0 ? "、" : "") + name;
             }
             if (notice.Length > 0)
@@ -479,6 +516,7 @@ namespace YxPrediction
                 }
                 catch { Message = _pending != null ? "网络未确认：暂停新操作并用同一编号重试，避免重复扣分" : "房间连接失败，稍后自动重连"; }
                 DestroyRequest(); _next = Time.unscaledTime + 1.5f;
+                if (!connect && _afterRegister == "linkCode") _afterRegister = null;
                 if (selected != null)
                 {
                     string error;
@@ -496,6 +534,7 @@ namespace YxPrediction
                 }
                 if (connect) ConnectReady(); return;
             }
+            if (_webCodeRequested && !Busy) { CreateWebCode(); return; }
             if (Time.unscaledTime < _next) return;
             _next = Time.unscaledTime + 1.5f;
             if (_pending != null) { Send(_pending); return; }
