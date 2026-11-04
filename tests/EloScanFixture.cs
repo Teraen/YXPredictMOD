@@ -7,6 +7,11 @@ public static class EloScanFixture
     public static void Verify()
     {
         string uid="0123456789abcdef01234567";
+        if (EloData.Url(uid) != EloData.ApiUrl + "?uid=" + uid) throw new Exception("Single UID URL is not a direct query");
+        if (EloData.BatchUrl(new string[] { uid, uid }) != EloData.ApiUrl + "?uid=" + uid + "&uid=" + uid) throw new Exception("Batch UID URL mismatch");
+        bool rejected = false;
+        try { EloData.BatchUrl(new string[] { "../../file" }); } catch (ArgumentException) { rejected = true; }
+        if (!rejected) throw new Exception("Invalid query UID accepted");
         var root=new Dictionary<string,object>();
         for(int i=0;i<500;i++){var row=new Dictionary<string,object>();row["h"]=new List<object>{"braces } ] and quotes "+(char)34+" slash "+(char)92};row["rating"]=3000+i;root["skip"+i.ToString(System.Globalization.CultureInfo.InvariantCulture)]=row;}
         var chosen=new Dictionary<string,object>();chosen["rating"]=4200;chosen["sigma"]=150;chosen["dx"]=10;root[uid]=chosen;

@@ -200,7 +200,7 @@ internal static partial class Program
             const string uid = "6418551449ce7dd2bc252b7b";
             var shard = Json.ParseObject("{\"6418551449ce7dd2bc252b7b\":{\"rating\":4733,\"sigma\":159,\"cons\":4416}}");
             Rating r = EloData.ReadPlayer(shard, uid); True(r.Found); Near(r.Score, 4733);
-            Equal(EloData.Url(uid), EloData.BaseUrl + "7b.json"); True(!EloData.IsPublicUid("../../file"));
+            Equal(EloData.Url(uid), EloData.ApiUrl + "?uid=" + uid); True(!EloData.IsPublicUid("../../file"));
             True(!EloData.ReadPlayer(shard, "6418551449ce7dd2bc252b00").Found);
             Throws(delegate { EloData.ReadPlayer(Json.ParseObject("{\"x\":{\"rating\":-1,\"sigma\":4}}"), "x"); });
         });
